@@ -1,0 +1,1867 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CE Marking & Rating Plate Generator</title>
+    <style>
+        :root {
+            --primary: #1a73e8;
+            --primary-dark: #1557b0;
+            --bg: #f0f2f5;
+            --card: #ffffff;
+            --text: #202124;
+            --text-secondary: #5f6368;
+            --border: #dadce0;
+            --success: #0d904f;
+            --warning: #e37400;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            color: white;
+            padding: 20px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .header p {
+            font-size: 13px;
+            opacity: 0.8;
+        }
+
+        .ce-icon {
+            width: 50px;
+            height: 50px;
+            border: 3px solid white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 380px 1fr;
+            gap: 20px;
+        }
+
+        .panel {
+            background: var(--card);
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            font-weight: 600;
+            font-size: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .panel-body {
+            padding: 20px;
+        }
+
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid var(--border);
+            margin-bottom: 16px;
+        }
+
+        .tab {
+            padding: 10px 16px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            color: var(--primary);
+            background: #f0f6ff;
+        }
+
+        .tab.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 14px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 9px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+            font-family: inherit;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(26,115,232,0.1);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .form-row-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 0;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .checkbox-group label {
+            font-size: 13px;
+            color: var(--text);
+            text-transform: none;
+            letter-spacing: 0;
+            font-weight: 500;
+            cursor: pointer;
+            margin-bottom: 0;
+        }
+
+        .template-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .template-btn {
+            padding: 10px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.2s;
+            background: white;
+        }
+
+        .template-btn:hover {
+            border-color: var(--primary);
+            background: #f0f6ff;
+        }
+
+        .template-btn.active {
+            border-color: var(--primary);
+            background: #e8f0fe;
+            color: var(--primary);
+        }
+
+        .template-btn .icon {
+            font-size: 24px;
+            margin-bottom: 4px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #0b7a43;
+        }
+
+        .btn-warning {
+            background: var(--warning);
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background: #c96600;
+        }
+
+        .btn-outline {
+            background: white;
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-outline:hover {
+            background: var(--bg);
+        }
+
+        .btn-block {
+            width: 100%;
+            justify-content: center;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+        }
+
+        .btn-group .btn {
+            flex: 1;
+        }
+
+        .preview-container {
+            position: sticky;
+            top: 20px;
+        }
+
+        .preview-area {
+            background: #f8f9fa;
+            border: 2px dashed var(--border);
+            border-radius: 8px;
+            min-height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 30px;
+            overflow: auto;
+        }
+
+        .preview-area svg {
+            max-width: 100%;
+            height: auto;
+            filter: drop-shadow(0 2px 8px rgba(0,0,0,0.1));
+        }
+
+        .preview-controls {
+            display: flex;
+            gap: 8px;
+            padding: 12px 0;
+            flex-wrap: wrap;
+        }
+
+        .size-info {
+            display: flex;
+            gap: 16px;
+            padding: 10px 16px;
+            background: #f0f6ff;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            font-size: 13px;
+        }
+
+        .size-info span {
+            color: var(--text-secondary);
+        }
+
+        .size-info strong {
+            color: var(--primary);
+        }
+
+        .divider {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 16px 0;
+        }
+
+        .section-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .symbols-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+
+        .symbol-btn {
+            padding: 8px 4px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            cursor: pointer;
+            text-align: center;
+            font-size: 10px;
+            transition: all 0.2s;
+            background: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+        }
+
+        .symbol-btn svg {
+            width: 28px;
+            height: 28px;
+        }
+
+        .symbol-btn:hover {
+            border-color: var(--primary);
+            background: #f0f6ff;
+        }
+
+        .symbol-btn.active {
+            border-color: var(--primary);
+            background: #e8f0fe;
+        }
+
+        .color-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .color-option input[type="color"] {
+            width: 36px;
+            height: 30px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            cursor: pointer;
+            padding: 2px;
+        }
+
+        .laser-info {
+            background: #fff8e1;
+            border: 1px solid #ffe082;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-top: 12px;
+        }
+
+        .laser-info h4 {
+            font-size: 13px;
+            color: #e65100;
+            margin-bottom: 6px;
+        }
+
+        .laser-info p {
+            font-size: 12px;
+            color: #795548;
+            line-height: 1.5;
+        }
+
+        .plate-dimensions {
+            display: flex;
+            gap: 10px;
+            align-items: end;
+        }
+
+        .plate-dimensions .form-group {
+            flex: 1;
+        }
+
+        .unit-selector {
+            display: flex;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            overflow: hidden;
+            margin-bottom: 14px;
+        }
+
+        .unit-btn {
+            flex: 1;
+            padding: 6px;
+            border: none;
+            background: white;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .unit-btn.active {
+            background: var(--primary);
+            color: white;
+        }
+
+        @media (max-width: 900px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+            .preview-container {
+                position: static;
+            }
+        }
+
+        .scrollable-panel {
+            max-height: calc(100vh - 120px);
+            overflow-y: auto;
+        }
+
+        .scrollable-panel::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .scrollable-panel::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 3px;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #323232;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            z-index: 1000;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s;
+        }
+
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        .additional-lines {
+            margin-top: 8px;
+        }
+
+        .additional-line {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 6px;
+        }
+
+        .additional-line input {
+            flex: 1;
+        }
+
+        .additional-line .remove-line {
+            width: 32px;
+            height: 36px;
+            border: 1px solid #e57373;
+            border-radius: 6px;
+            background: #ffebee;
+            color: #c62828;
+            cursor: pointer;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .add-line-btn {
+            font-size: 12px;
+            color: var(--primary);
+            cursor: pointer;
+            background: none;
+            border: 1px dashed var(--primary);
+            padding: 6px;
+            border-radius: 6px;
+            width: 100%;
+            margin-top: 4px;
+        }
+
+        .add-line-btn:hover {
+            background: #f0f6ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <div class="ce-icon">CE</div>
+            <div>
+                <h1>CE Marking & Rating Plate Generator</h1>
+                <p>Generate professional rating plates for laser engraving — Export as SVG & DXF</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Left Panel - Controls -->
+        <div class="panel scrollable-panel">
+            <div class="panel-header">⚙️ Plate Configuration</div>
+            <div class="panel-body">
+                <!-- Templates -->
+                <div class="section-title">Quick Templates</div>
+                <div class="template-grid">
+                    <div class="template-btn active" onclick="loadTemplate('motor')" id="tpl-motor">
+                        <div class="icon">⚡</div>
+                        <div>Electric Motor</div>
+                    </div>
+                    <div class="template-btn" onclick="loadTemplate('pump')" id="tpl-pump">
+                        <div class="icon">💧</div>
+                        <div>Pump</div>
+                    </div>
+                    <div class="template-btn" onclick="loadTemplate('panel')" id="tpl-panel">
+                        <div class="icon">🔌</div>
+                        <div>Control Panel</div>
+                    </div>
+                    <div class="template-btn" onclick="loadTemplate('machine')" id="tpl-machine">
+                        <div class="icon">🏭</div>
+                        <div>Machine</div>
+                    </div>
+                    <div class="template-btn" onclick="loadTemplate('valve')" id="tpl-valve">
+                        <div class="icon">🔧</div>
+                        <div>Valve/Actuator</div>
+                    </div>
+                    <div class="template-btn" onclick="loadTemplate('custom')" id="tpl-custom">
+                        <div class="icon">📋</div>
+                        <div>Custom</div>
+                    </div>
+                </div>
+
+                <!-- Tabs -->
+                <div class="tabs">
+                    <div class="tab active" onclick="switchTab('general')">General</div>
+                    <div class="tab" onclick="switchTab('electrical')">Electrical</div>
+                    <div class="tab" onclick="switchTab('mechanical')">Mechanical</div>
+                    <div class="tab" onclick="switchTab('appearance')">Appearance</div>
+                </div>
+
+                <!-- General Tab -->
+                <div class="tab-content active" id="tab-general">
+                    <div class="form-group">
+                        <label>Manufacturer / Company Name</label>
+                        <input type="text" id="manufacturer" value="ACME Engineering Ltd." oninput="updatePreview()">
+                    </div>
+                    <div class="form-group">
+                        <label>Address</label>
+                        <input type="text" id="address" value="123 Industrial Ave, Manchester, UK" oninput="updatePreview()">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Model</label>
+                            <input type="text" id="model" value="ACM-750" oninput="updatePreview()">
+                        </div>
+                        <div class="form-group">
+                            <label>Serial Number</label>
+                            <input type="text" id="serial" value="SN-2024-00142" oninput="updatePreview()">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Type / Part No.</label>
+                            <input type="text" id="partno" value="3PH-IE3" oninput="updatePreview()">
+                        </div>
+                        <div class="form-group">
+                            <label>Year of Manufacture</label>
+                            <input type="text" id="year" value="2024" oninput="updatePreview()">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Country of Origin</label>
+                        <input type="text" id="country" value="United Kingdom" oninput="updatePreview()">
+                    </div>
+                    <div class="form-group">
+                        <label>Additional Custom Lines</label>
+                        <div class="additional-lines" id="additionalLines">
+                        </div>
+                        <button class="add-line-btn" onclick="addCustomLine()">+ Add Custom Line</button>
+                    </div>
+                </div>
+
+                <!-- Electrical Tab -->
+                <div class="tab-content" id="tab-electrical">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Voltage (V)</label>
+                            <input type="text" id="voltage" value="400" oninput="updatePreview()">
+                        </div>
+                        <div class="form-group">
+                            <label>Phase</label>
+                            <select id="phase" onchange="updatePreview()">
+                                <option value="">N/A</option>
+                                <option value="1">Single Phase (1Ø)</option>
+                                <option value="3" selected>Three Phase (3Ø)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Frequency (Hz)</label>
+                            <input type="text" id="frequency" value="50" oninput="updatePreview()">
+                        </div>
+                        <div class="form-group">
+                            <label>Current (A)</label>
+                            <input type="text" id="current" value="1.8" oninput="updatePreview()">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Power (kW)</label>
+                            <input type="text" id="power" value="0.75" oninput="updatePreview()">
+                        </div>
+                        <div class="form-group">
+                            <label>Power Factor (cos φ)</label>
+                            <input type="text" id="powerfactor" value="0.82" oninput="updatePreview()">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>IP Rating</label>
+                            <select id="iprating" onchange="updatePreview()">
+                                <option value="">N/A</option>
+                                <option value="IP20">IP20</option>
+                                <option value="IP44">IP44</option>
+                                <option value="IP54">IP54</option>
+                                <option value="IP55" selected>IP55</option>
+                                <option value="IP65">IP65</option>
+                                <option value="IP66">IP66</option>
+                                <option value="IP67">IP67</option>
+                                <option value="IP68">IP68</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Insulation Class</label>
+                            <select id="insclass" onchange="updatePreview()">
+                                <option value="">N/A</option>
+                                <option value="B">Class B (130°C)</option>
+                                <option value="F" selected>Class F (155°C)</option>
+                                <option value="H">Class H (180°C)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Efficiency Class</label>
+                        <select id="efficiency" onchange="updatePreview()">
+                            <option value="">N/A</option>
+                            <option value="IE1">IE1 - Standard</option>
+                            <option value="IE2">IE2 - High</option>
+                            <option value="IE3" selected>IE3 - Premium</option>
+                            <option value="IE4">IE4 - Super Premium</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Mechanical Tab -->
+                <div class="tab-content" id="tab-mechanical">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Speed (RPM)</label>
+                            <input type="text" id="rpm" value="1450" oninput="updatePreview()">
+                        </div>
+                        <div class="form-group">
+                            <label>Weight (kg)</label>
+                            <input type="text" id="weight" value="12.5" oninput="updatePreview()">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Max Pressure (bar)</label>
+                            <input type="text" id="pressure" value="" oninput="updatePreview()">
+                        </div>
+                        <div class="form-group">
+                            <label>Max Temperature (°C)</label>
+                            <input type="text" id="temperature" value="" oninput="updatePreview()">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Flow Rate (m³/h)</label>
+                            <input type="text" id="flowrate" value="" oninput="updatePreview()">
+                        </div>
+                        <div class="form-group">
+                            <label>Frame Size</label>
+                            <input type="text" id="framesize" value="80" oninput="updatePreview()">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Ambient Temperature Range</label>
+                        <input type="text" id="ambienttemp" value="-20°C to +40°C" oninput="updatePreview()">
+                    </div>
+                </div>
+
+                <!-- Appearance Tab -->
+                <div class="tab-content" id="tab-appearance">
+                    <div class="section-title">Plate Dimensions (mm)</div>
+                    <div class="form-row-3">
+                        <div class="form-group">
+                            <label>Width</label>
+                            <input type="number" id="plateWidth" value="120" min="60" max="300" oninput="updatePreview()">
+                        </div>
+                        <div class="form-group">
+                            <label>Height</label>
+                            <input type="number" id="plateHeight" value="80" min="40" max="200" oninput="updatePreview()">
+                        </div>
+                        <div class="form-group">
+                            <label>Corner R</label>
+                            <input type="number" id="cornerRadius" value="3" min="0" max="15" oninput="updatePreview()">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Border Width</label>
+                            <input type="number" id="borderWidth" value="0.5" min="0.1" max="3" step="0.1" oninput="updatePreview()">
+                        </div>
+                        <div class="form-group">
+                            <label>Margin (mm)</label>
+                            <input type="number" id="plateMargin" value="3" min="1" max="15" step="0.5" oninput="updatePreview()">
+                        </div>
+                    </div>
+
+                    <hr class="divider">
+
+                    <div class="section-title">Symbols to Include</div>
+                    <div class="symbols-grid">
+                        <label class="symbol-btn active" id="sym-ce">
+                            <input type="checkbox" checked onchange="toggleSymbol('ce', this)" style="display:none">
+                            <svg viewBox="0 0 40 26"><text x="20" y="20" text-anchor="middle" font-size="20" font-weight="bold" font-family="Arial">CE</text></svg>
+                            CE Mark
+                        </label>
+                        <label class="symbol-btn" id="sym-weee">
+                            <input type="checkbox" onchange="toggleSymbol('weee', this)" style="display:none">
+                            <svg viewBox="0 0 28 28"><circle cx="14" cy="14" r="12" fill="none" stroke="black" stroke-width="1.5"/><line x1="14" y1="6" x2="14" y2="22" stroke="black" stroke-width="1.5"/><line x1="8" y1="14" x2="20" y2="14" stroke="black" stroke-width="1.5"/></svg>
+                            WEEE
+                        </label>
+                        <label class="symbol-btn" id="sym-rohs">
+                            <input type="checkbox" onchange="toggleSymbol('rohs', this)" style="display:none">
+                            <svg viewBox="0 0 40 28"><text x="20" y="18" text-anchor="middle" font-size="11" font-weight="bold" font-family="Arial">RoHS</text></svg>
+                            RoHS
+                        </label>
+                        <label class="symbol-btn" id="sym-ukca">
+                            <input type="checkbox" onchange="toggleSymbol('ukca', this)" style="display:none">
+                            <svg viewBox="0 0 40 26"><text x="20" y="19" text-anchor="middle" font-size="14" font-weight="bold" font-family="Arial">UKCA</text></svg>
+                            UKCA
+                        </label>
+                    </div>
+
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="showMountHoles" onchange="updatePreview()">
+                        <label for="showMountHoles">Add mounting holes</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="showQR" onchange="updatePreview()">
+                        <label for="showQR">Add QR code placeholder</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="showInnerBorder" checked onchange="updatePreview()">
+                        <label for="showInnerBorder">Show inner border</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="invertColors" onchange="updatePreview()">
+                        <label for="invertColors">Invert colors (for anodized plates)</label>
+                    </div>
+
+                    <hr class="divider">
+
+                    <div class="section-title">Engraving Color Preview</div>
+                    <div class="color-option">
+                        <input type="color" id="bgColor" value="#ffffff" oninput="updatePreview()">
+                        <span style="font-size:13px">Plate Background</span>
+                    </div>
+                    <div class="color-option">
+                        <input type="color" id="fgColor" value="#000000" oninput="updatePreview()">
+                        <span style="font-size:13px">Engraving / Text</span>
+                    </div>
+
+                    <div class="laser-info">
+                        <h4>🔥 Laser Engraving Tips</h4>
+                        <p>
+                            • SVG exports use vector strokes ideal for laser cutting/engraving<br>
+                            • DXF exports are compatible with LightBurn, LaserGRBL, RDWorks<br>
+                            • Recommended material: Anodized aluminum, stainless steel, or acrylic<br>
+                            • All dimensions are in millimeters
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel - Preview & Export -->
+        <div class="preview-container">
+            <div class="panel">
+                <div class="panel-header">👁️ Live Preview</div>
+                <div class="panel-body">
+                    <div class="size-info">
+                        <div><span>Width: </span><strong id="dispWidth">120mm</strong></div>
+                        <div><span>Height: </span><strong id="dispHeight">80mm</strong></div>
+                        <div><span>Scale: </span><strong>1:1 (mm)</strong></div>
+                    </div>
+
+                    <div class="preview-area" id="previewArea">
+                        <!-- SVG Preview renders here -->
+                    </div>
+
+                    <div class="preview-controls">
+                        <button class="btn btn-primary" onclick="updatePreview()">🔄 Refresh</button>
+                        <button class="btn btn-outline" onclick="zoomPreview(1.2)">🔍+</button>
+                        <button class="btn btn-outline" onclick="zoomPreview(0.8)">🔍−</button>
+                        <button class="btn btn-outline" onclick="zoomPreview(0)">↺ Reset</button>
+                    </div>
+
+                    <div class="btn-group">
+                        <button class="btn btn-success btn-block" onclick="downloadSVG()">
+                            ⬇ Download SVG
+                        </button>
+                        <button class="btn btn-warning btn-block" onclick="downloadDXF()">
+                            ⬇ Download DXF
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        let currentZoom = 1;
+        let activeSymbols = { ce: true, weee: false, rohs: false, ukca: false };
+        let customLines = [];
+
+        // Template Definitions
+        const templates = {
+            motor: {
+                manufacturer: 'ACME Engineering Ltd.',
+                address: '123 Industrial Ave, Manchester, UK',
+                model: 'ACM-750',
+                serial: 'SN-2024-00142',
+                partno: '3PH-IE3',
+                year: '2024',
+                country: 'United Kingdom',
+                voltage: '400',
+                phase: '3',
+                frequency: '50',
+                current: '1.8',
+                power: '0.75',
+                powerfactor: '0.82',
+                iprating: 'IP55',
+                insclass: 'F',
+                efficiency: 'IE3',
+                rpm: '1450',
+                weight: '12.5',
+                pressure: '',
+                temperature: '',
+                flowrate: '',
+                framesize: '80',
+                ambienttemp: '-20°C to +40°C'
+            },
+            pump: {
+                manufacturer: 'HydroFlow Systems',
+                address: '56 Pump Lane, Birmingham, UK',
+                model: 'HF-200C',
+                serial: 'PMP-2024-0087',
+                partno: 'CENT-200',
+                year: '2024',
+                country: 'United Kingdom',
+                voltage: '400',
+                phase: '3',
+                frequency: '50',
+                current: '4.2',
+                power: '2.2',
+                powerfactor: '0.85',
+                iprating: 'IP55',
+                insclass: 'F',
+                efficiency: 'IE3',
+                rpm: '2900',
+                weight: '28',
+                pressure: '10',
+                temperature: '80',
+                flowrate: '12',
+                framesize: '100L',
+                ambienttemp: '-10°C to +50°C'
+            },
+            panel: {
+                manufacturer: 'ElectraPro Controls',
+                address: '78 Circuit Road, Leeds, UK',
+                model: 'EPC-MCC-01',
+                serial: 'PNL-2024-0234',
+                partno: 'MCC-400A',
+                year: '2024',
+                country: 'United Kingdom',
+                voltage: '400',
+                phase: '3',
+                frequency: '50',
+                current: '400',
+                power: '250',
+                powerfactor: '',
+                iprating: 'IP54',
+                insclass: '',
+                efficiency: '',
+                rpm: '',
+                weight: '320',
+                pressure: '',
+                temperature: '',
+                flowrate: '',
+                framesize: '',
+                ambienttemp: '-5°C to +45°C'
+            },
+            machine: {
+                manufacturer: 'MechPro Industries',
+                address: '12 Factory Street, Sheffield, UK',
+                model: 'MP-CNC-500',
+                serial: 'MCH-2024-0056',
+                partno: 'CNC-3AX',
+                year: '2024',
+                country: 'United Kingdom',
+                voltage: '400',
+                phase: '3',
+                frequency: '50',
+                current: '32',
+                power: '15',
+                powerfactor: '',
+                iprating: 'IP44',
+                insclass: '',
+                efficiency: '',
+                rpm: '',
+                weight: '2500',
+                pressure: '6',
+                temperature: '',
+                flowrate: '',
+                framesize: '',
+                ambienttemp: '+5°C to +40°C'
+            },
+            valve: {
+                manufacturer: 'ValveTech Solutions',
+                address: '34 Flow Ave, Glasgow, UK',
+                model: 'VT-BV-DN50',
+                serial: 'VLV-2024-0312',
+                partno: 'BV-DN50-PN40',
+                year: '2024',
+                country: 'United Kingdom',
+                voltage: '24',
+                phase: '1',
+                frequency: '50',
+                current: '0.5',
+                power: '0.012',
+                powerfactor: '',
+                iprating: 'IP67',
+                insclass: '',
+                efficiency: '',
+                rpm: '',
+                weight: '8.5',
+                pressure: '40',
+                temperature: '200',
+                flowrate: '45',
+                framesize: 'DN50',
+                ambienttemp: '-20°C to +60°C'
+            },
+            custom: {
+                manufacturer: '',
+                address: '',
+                model: '',
+                serial: '',
+                partno: '',
+                year: new Date().getFullYear().toString(),
+                country: '',
+                voltage: '',
+                phase: '',
+                frequency: '',
+                current: '',
+                power: '',
+                powerfactor: '',
+                iprating: '',
+                insclass: '',
+                efficiency: '',
+                rpm: '',
+                weight: '',
+                pressure: '',
+                temperature: '',
+                flowrate: '',
+                framesize: '',
+                ambienttemp: ''
+            }
+        };
+
+        function loadTemplate(name) {
+            document.querySelectorAll('.template-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('tpl-' + name).classList.add('active');
+
+            const t = templates[name];
+            Object.keys(t).forEach(key => {
+                const el = document.getElementById(key);
+                if (el) el.value = t[key];
+            });
+            updatePreview();
+        }
+
+        function switchTab(name) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById('tab-' + name).classList.add('active');
+        }
+
+        function toggleSymbol(name, checkbox) {
+            activeSymbols[name] = checkbox.checked;
+            document.getElementById('sym-' + name).classList.toggle('active', checkbox.checked);
+            updatePreview();
+        }
+
+        function addCustomLine() {
+            const id = Date.now();
+            customLines.push({ id, label: '', value: '' });
+            renderCustomLines();
+            updatePreview();
+        }
+
+        function removeCustomLine(id) {
+            customLines = customLines.filter(l => l.id !== id);
+            renderCustomLines();
+            updatePreview();
+        }
+
+        function renderCustomLines() {
+            const container = document.getElementById('additionalLines');
+            container.innerHTML = customLines.map(line => `
+                <div class="additional-line">
+                    <input type="text" placeholder="Label" value="${line.label}" oninput="updateCustomLine(${line.id}, 'label', this.value)" style="padding:8px 10px;border:1px solid #dadce0;border-radius:6px;font-size:13px;">
+                    <input type="text" placeholder="Value" value="${line.value}" oninput="updateCustomLine(${line.id}, 'value', this.value)" style="padding:8px 10px;border:1px solid #dadce0;border-radius:6px;font-size:13px;">
+                    <button class="remove-line" onclick="removeCustomLine(${line.id})">×</button>
+                </div>
+            `).join('');
+        }
+
+        function updateCustomLine(id, field, value) {
+            const line = customLines.find(l => l.id === id);
+            if (line) line[field] = value;
+            updatePreview();
+        }
+
+        function getVal(id) {
+            const el = document.getElementById(id);
+            return el ? el.value.trim() : '';
+        }
+
+        function generateSVGContent() {
+            const w = parseFloat(getVal('plateWidth')) || 120;
+            const h = parseFloat(getVal('plateHeight')) || 80;
+            const r = parseFloat(getVal('cornerRadius')) || 3;
+            const bw = parseFloat(getVal('borderWidth')) || 0.5;
+            const margin = parseFloat(getVal('plateMargin')) || 3;
+            const showMountHoles = document.getElementById('showMountHoles').checked;
+            const showQR = document.getElementById('showQR').checked;
+            const showInnerBorder = document.getElementById('showInnerBorder').checked;
+            const invert = document.getElementById('invertColors').checked;
+
+            let bg = getVal('bgColor') || '#ffffff';
+            let fg = getVal('fgColor') || '#000000';
+            if (invert) { [bg, fg] = [fg, bg]; }
+
+            // Collect data rows
+            const dataRows = [];
+
+            const manufacturer = getVal('manufacturer');
+            const address = getVal('address');
+            const model = getVal('model');
+            const serial = getVal('serial');
+            const partno = getVal('partno');
+            const year = getVal('year');
+            const country = getVal('country');
+            const voltage = getVal('voltage');
+            const phase = getVal('phase');
+            const frequency = getVal('frequency');
+            const current = getVal('current');
+            const power = getVal('power');
+            const powerfactor = getVal('powerfactor');
+            const iprating = getVal('iprating');
+            const insclass = getVal('insclass');
+            const efficiency = getVal('efficiency');
+            const rpm = getVal('rpm');
+            const weight = getVal('weight');
+            const pressure = getVal('pressure');
+            const temperature = getVal('temperature');
+            const flowrate = getVal('flowrate');
+            const framesize = getVal('framesize');
+            const ambienttemp = getVal('ambienttemp');
+
+            // Build specification lines
+            if (model) dataRows.push(['Model', model]);
+            if (partno) dataRows.push(['Type', partno]);
+            if (serial) dataRows.push(['S/N', serial]);
+            if (year) dataRows.push(['Year', year]);
+
+            // Electrical
+            let elecLine = [];
+            if (voltage) elecLine.push(voltage + 'V');
+            if (phase) elecLine.push(phase + 'Ø');
+            if (frequency) elecLine.push(frequency + 'Hz');
+            if (elecLine.length) dataRows.push(['Supply', elecLine.join(' / ')]);
+
+            if (power) dataRows.push(['Power', power + ' kW']);
+            if (current) dataRows.push(['Current', current + ' A']);
+            if (powerfactor) dataRows.push(['Cos φ', powerfactor]);
+            if (rpm) dataRows.push(['Speed', rpm + ' RPM']);
+
+            // Ratings
+            let ratingsLine = [];
+            if (iprating) ratingsLine.push(iprating);
+            if (insclass) ratingsLine.push('Cl.' + insclass);
+            if (efficiency) ratingsLine.push(efficiency);
+            if (ratingsLine.length) dataRows.push(['Rating', ratingsLine.join(' / ')]);
+
+            if (framesize) dataRows.push(['Frame', framesize]);
+            if (weight) dataRows.push(['Weight', weight + ' kg']);
+            if (pressure) dataRows.push(['Max Press.', pressure + ' bar']);
+            if (temperature) dataRows.push(['Max Temp.', temperature + '°C']);
+            if (flowrate) dataRows.push(['Flow', flowrate + ' m³/h']);
+            if (ambienttemp) dataRows.push(['Amb. Temp', ambienttemp]);
+            if (country) dataRows.push(['Origin', country]);
+
+            // Custom lines
+            customLines.forEach(cl => {
+                if (cl.label || cl.value) {
+                    dataRows.push([cl.label, cl.value]);
+                }
+            });
+
+            // Calculate font sizes based on plate size
+            const scale = Math.min(w / 120, h / 80);
+            const titleSize = Math.max(2.5, 3.5 * scale);
+            const labelSize = Math.max(1.8, 2.2 * scale);
+            const valueSize = Math.max(1.8, 2.5 * scale);
+            const addressSize = Math.max(1.5, 1.8 * scale);
+            const lineHeight = Math.max(3, 3.5 * scale);
+
+            // Symbol area dimensions
+            const symbolAreaWidth = 20 * scale;
+            const ceSize = 10 * scale;
+
+            let svgContent = '';
+
+            // Outer border
+            svgContent += `<rect x="${bw/2}" y="${bw/2}" width="${w-bw}" height="${h-bw}" rx="${r}" ry="${r}" fill="${bg}" stroke="${fg}" stroke-width="${bw}"/>`;
+
+            // Inner border
+            if (showInnerBorder) {
+                const ib = margin;
+                svgContent += `<rect x="${ib}" y="${ib}" width="${w-2*ib}" height="${h-2*ib}" rx="${Math.max(0,r-1)}" ry="${Math.max(0,r-1)}" fill="none" stroke="${fg}" stroke-width="${bw*0.5}"/>`;
+            }
+
+            // Mount holes
+            if (showMountHoles) {
+                const holeR = 1.5;
+                const hm = margin + 2;
+                svgContent += `<circle cx="${hm}" cy="${hm}" r="${holeR}" fill="none" stroke="${fg}" stroke-width="${bw*0.5}"/>`;
+                svgContent += `<circle cx="${w-hm}" cy="${hm}" r="${holeR}" fill="none" stroke="${fg}" stroke-width="${bw*0.5}"/>`;
+                svgContent += `<circle cx="${hm}" cy="${h-hm}" r="${holeR}" fill="none" stroke="${fg}" stroke-width="${bw*0.5}"/>`;
+                svgContent += `<circle cx="${w-hm}" cy="${h-hm}" r="${holeR}" fill="none" stroke="${fg}" stroke-width="${bw*0.5}"/>`;
+            }
+
+            const contentLeft = margin + 1.5;
+            const contentRight = w - margin - 1.5;
+            let yPos = margin + 2;
+
+            // Manufacturer title
+            if (manufacturer) {
+                yPos += titleSize;
+                svgContent += `<text x="${w/2}" y="${yPos}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${titleSize}" font-weight="bold" fill="${fg}">${escXml(manufacturer)}</text>`;
+                yPos += 1;
+            }
+
+            // Address
+            if (address) {
+                yPos += addressSize;
+                svgContent += `<text x="${w/2}" y="${yPos}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${addressSize}" fill="${fg}">${escXml(address)}</text>`;
+                yPos += 1;
+            }
+
+            // Separator line
+            yPos += 1;
+            svgContent += `<line x1="${contentLeft}" y1="${yPos}" x2="${contentRight}" y2="${yPos}" stroke="${fg}" stroke-width="${bw*0.3}"/>`;
+            yPos += 2;
+
+            // Calculate content area
+            const qrSize = showQR ? 12 * scale : 0;
+            const symbolsY = h - margin - 2;
+
+            // Determine text area bounds
+            const textRight = showQR ? contentRight - qrSize - 2 : contentRight;
+
+            // Data rows
+            const availableHeight = (symbolsY - 4 * scale) - yPos;
+            const maxRows = Math.floor(availableHeight / lineHeight);
+            const displayRows = dataRows.slice(0, maxRows);
+            const labelColWidth = 22 * scale;
+
+            displayRows.forEach(([label, value]) => {
+                yPos += lineHeight;
+                svgContent += `<text x="${contentLeft}" y="${yPos}" font-family="Arial, sans-serif" font-size="${labelSize}" fill="${fg}" font-weight="bold">${escXml(label)}:</text>`;
+                svgContent += `<text x="${contentLeft + labelColWidth}" y="${yPos}" font-family="Arial, sans-serif" font-size="${valueSize}" fill="${fg}">${escXml(value)}</text>`;
+            });
+
+            // QR Code placeholder
+            if (showQR) {
+                const qrX = contentRight - qrSize;
+                const qrY = margin + (manufacturer ? titleSize + 3 : 2) + (address ? addressSize + 2 : 0) + 3;
+                svgContent += `<rect x="${qrX}" y="${qrY}" width="${qrSize}" height="${qrSize}" fill="none" stroke="${fg}" stroke-width="${bw*0.5}"/>`;
+                // Simple QR-like pattern
+                const cellSize = qrSize / 7;
+                for (let row = 0; row < 7; row++) {
+                    for (let col = 0; col < 7; col++) {
+                        if ((row < 3 && col < 3) || (row < 3 && col > 3) || (row > 3 && col < 3) || (row === 3 && col === 3) || Math.random() > 0.6) {
+                            svgContent += `<rect x="${qrX + col*cellSize}" y="${qrY + row*cellSize}" width="${cellSize}" height="${cellSize}" fill="${fg}" stroke="none"/>`;
+                        }
+                    }
+                }
+            }
+
+            // Symbols area at bottom
+            let symbolX = contentLeft;
+            const symbolY = h - margin - 2;
+
+            if (activeSymbols.ce) {
+                // CE Mark - proper proportions
+                const ceH = ceSize;
+                const ceW = ceSize * 1.4;
+                const cy = symbolY - ceH;
+                svgContent += generateCEMark(symbolX, cy, ceH, fg);
+                symbolX += ceW + 2;
+            }
+
+            if (activeSymbols.ukca) {
+                const ukH = ceSize * 0.8;
+                const cy = symbolY - ukH;
+                svgContent += `<text x="${symbolX}" y="${symbolY - 1}" font-family="Arial, sans-serif" font-size="${ukH}" font-weight="bold" fill="${fg}">UKCA</text>`;
+                symbolX += ukH * 3 + 2;
+            }
+
+            if (activeSymbols.weee) {
+                const weeH = ceSize * 0.8;
+                const cy = symbolY - weeH;
+                svgContent += generateWEEESymbol(symbolX, cy, weeH, fg, bw);
+                symbolX += weeH + 2;
+            }
+
+            if (activeSymbols.rohs) {
+                const rohH = ceSize * 0.6;
+                svgContent += `<text x="${symbolX}" y="${symbolY - 1}" font-family="Arial, sans-serif" font-size="${rohH}" font-weight="bold" fill="${fg}">RoHS</text>`;
+                symbolX += rohH * 3 + 2;
+            }
+
+            const svgString = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${w}mm" height="${h}mm" viewBox="0 0 ${w} ${h}">
+${svgContent}
+</svg>`;
+
+            return { svgString, w, h };
+        }
+
+        function generateCEMark(x, y, size, color) {
+            // Simplified but recognizable CE mark using paths
+            const s = size;
+            const sw = s * 0.08;
+            let svg = '';
+
+            // C
+            const cx1 = x + s * 0.3;
+            const cy = y + s * 0.5;
+            const r = s * 0.35;
+            svg += `<path d="M ${cx1 + r * 0.5} ${cy - r} A ${r} ${r} 0 1 0 ${cx1 + r * 0.5} ${cy + r}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round"/>`;
+
+            // E
+            const cx2 = x + s * 0.85;
+            svg += `<path d="M ${cx2 + r * 0.5} ${cy - r} A ${r} ${r} 0 1 0 ${cx2 + r * 0.5} ${cy + r}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round"/>`;
+            svg += `<line x1="${cx2 - r * 0.1}" y1="${cy}" x2="${cx2 + r * 0.5}" y2="${cy}" stroke="${color}" stroke-width="${sw}"/>`;
+
+            return svg;
+        }
+
+        function generateWEEESymbol(x, y, size, color, bw) {
+            const s = size;
+            const cx = x + s / 2;
+            const cy = y + s / 2;
+            const r = s * 0.45;
+            let svg = '';
+
+            // Wheelie bin
+            svg += `<rect x="${cx-s*0.2}" y="${cy-s*0.25}" width="${s*0.4}" height="${s*0.35}" fill="none" stroke="${color}" stroke-width="${bw*0.5}" rx="1"/>`;
+            svg += `<line x1="${cx-s*0.25}" y1="${cy-s*0.25}" x2="${cx+s*0.25}" y2="${cy-s*0.25}" stroke="${color}" stroke-width="${bw*0.5}"/>`;
+            svg += `<line x1="${cx}" y1="${cy-s*0.4}" x2="${cx}" y2="${cy-s*0.25}" stroke="${color}" stroke-width="${bw*0.5}"/>`;
+            // Wheels
+            svg += `<circle cx="${cx-s*0.12}" cy="${cy+s*0.15}" r="${s*0.05}" fill="${color}"/>`;
+            svg += `<circle cx="${cx+s*0.12}" cy="${cy+s*0.15}" r="${s*0.05}" fill="${color}"/>`;
+            // X through it
+            svg += `<line x1="${cx-s*0.35}" y1="${cy+s*0.35}" x2="${cx+s*0.35}" y2="${cy-s*0.35}" stroke="${color}" stroke-width="${bw*0.8}"/>`;
+
+            return svg;
+        }
+
+        function escXml(str) {
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+        }
+
+        function updatePreview() {
+            const { svgString, w, h } = generateSVGContent();
+
+            document.getElementById('dispWidth').textContent = w + 'mm';
+            document.getElementById('dispHeight').textContent = h + 'mm';
+
+            const previewArea = document.getElementById('previewArea');
+
+            // Create a version with pixel dimensions for display
+            const displayScale = 4; // 4 pixels per mm for good preview
+            const displaySvg = svgString.replace(
+                `width="${w}mm" height="${h}mm"`,
+                `width="${w * displayScale * currentZoom}" height="${h * displayScale * currentZoom}"`
+            );
+
+            previewArea.innerHTML = displaySvg;
+        }
+
+        function zoomPreview(factor) {
+            if (factor === 0) {
+                currentZoom = 1;
+            } else {
+                currentZoom *= factor;
+                currentZoom = Math.max(0.3, Math.min(5, currentZoom));
+            }
+            updatePreview();
+        }
+
+        function downloadSVG() {
+            const { svgString } = generateSVGContent();
+            const blob = new Blob([svgString], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `rating_plate_${getVal('model') || 'custom'}.svg`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('SVG file downloaded successfully!');
+        }
+
+        function downloadDXF() {
+            const dxfContent = generateDXF();
+            const blob = new Blob([dxfContent], { type: 'application/dxf' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `rating_plate_${getVal('model') || 'custom'}.dxf`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('DXF file downloaded successfully!');
+        }
+
+        function generateDXF() {
+            const w = parseFloat(getVal('plateWidth')) || 120;
+            const h = parseFloat(getVal('plateHeight')) || 80;
+            const r = parseFloat(getVal('cornerRadius')) || 3;
+            const bw = parseFloat(getVal('borderWidth')) || 0.5;
+            const margin = parseFloat(getVal('plateMargin')) || 3;
+            const showMountHoles = document.getElementById('showMountHoles').checked;
+            const showQR = document.getElementById('showQR').checked;
+            const showInnerBorder = document.getElementById('showInnerBorder').checked;
+
+            let entities = [];
+            let handle = 100;
+
+            function nextHandle() {
+                return (handle++).toString(16).toUpperCase();
+            }
+
+            function addLine(x1, y1, x2, y2, layer = '0') {
+                entities.push(
+                    '  0', 'LINE',
+                    '  5', nextHandle(),
+                    '100', 'AcDbEntity',
+                    '  8', layer,
+                    '100', 'AcDbLine',
+                    ' 10', x1.toFixed(6),
+                    ' 20', y1.toFixed(6),
+                    ' 30', '0.0',
+                    ' 11', x2.toFixed(6),
+                    ' 21', y2.toFixed(6),
+                    ' 31', '0.0'
+                );
+            }
+
+            function addCircle(cx, cy, radius, layer = '0') {
+                entities.push(
+                    '  0', 'CIRCLE',
+                    '  5', nextHandle(),
+                    '100', 'AcDbEntity',
+                    '  8', layer,
+                    '100', 'AcDbCircle',
+                    ' 10', cx.toFixed(6),
+                    ' 20', cy.toFixed(6),
+                    ' 30', '0.0',
+                    ' 40', radius.toFixed(6)
+                );
+            }
+
+            function addArc(cx, cy, radius, startAngle, endAngle, layer = '0') {
+                entities.push(
+                    '  0', 'ARC',
+                    '  5', nextHandle(),
+                    '100', 'AcDbEntity',
+                    '  8', layer,
+                    '100', 'AcDbCircle',
+                    ' 10', cx.toFixed(6),
+                    ' 20', cy.toFixed(6),
+                    ' 30', '0.0',
+                    ' 40', radius.toFixed(6),
+                    '100', 'AcDbArc',
+                    ' 50', startAngle.toFixed(6),
+                    ' 51', endAngle.toFixed(6)
+                );
+            }
+
+            function addText(x, y, textHeight, text, layer = 'TEXT', hAlign = 0) {
+                const halign = hAlign; // 0=left, 1=center, 2=right
+                if (halign === 0) {
+                    entities.push(
+                        '  0', 'TEXT',
+                        '  5', nextHandle(),
+                        '100', 'AcDbEntity',
+                        '  8', layer,
+                        '100', 'AcDbText',
+                        ' 10', x.toFixed(6),
+                        ' 20', y.toFixed(6),
+                        ' 30', '0.0',
+                        ' 40', textHeight.toFixed(6),
+                        '  1', text,
+                        '100', 'AcDbText'
+                    );
+                } else {
+                    entities.push(
+                        '  0', 'TEXT',
+                        '  5', nextHandle(),
+                        '100', 'AcDbEntity',
+                        '  8', layer,
+                        '100', 'AcDbText',
+                        ' 10', x.toFixed(6),
+                        ' 20', y.toFixed(6),
+                        ' 30', '0.0',
+                        ' 40', textHeight.toFixed(6),
+                        '  1', text,
+                        ' 72', halign.toString(),
+                        ' 11', x.toFixed(6),
+                        ' 21', y.toFixed(6),
+                        ' 31', '0.0',
+                        '100', 'AcDbText',
+                        ' 73', '0'
+                    );
+                }
+            }
+
+            function addMText(x, y, textHeight, text, width, layer = 'TEXT', attachment = 1) {
+                entities.push(
+                    '  0', 'MTEXT',
+                    '  5', nextHandle(),
+                    '100', 'AcDbEntity',
+                    '  8', layer,
+                    '100', 'AcDbMText',
+                    ' 10', x.toFixed(6),
+                    ' 20', y.toFixed(6),
+                    ' 30', '0.0',
+                    ' 40', textHeight.toFixed(6),
+                    ' 41', width.toFixed(6),
+                    ' 71', attachment.toString(),
+                    '  1', text
+                );
+            }
+
+            function drawRoundedRect(x1, y1, x2, y2, radius, layer) {
+                if (radius <= 0) {
+                    addLine(x1, y1, x2, y1, layer);
+                    addLine(x2, y1, x2, y2, layer);
+                    addLine(x2, y2, x1, y2, layer);
+                    addLine(x1, y2, x1, y1, layer);
+                } else {
+                    const cr = Math.min(radius, (x2-x1)/2, (y2-y1)/2);
+                    // Bottom edge
+                    addLine(x1+cr, y1, x2-cr, y1, layer);
+                    // Right edge
+                    addLine(x2, y1+cr, x2, y2-cr, layer);
+                    // Top edge
+                    addLine(x2-cr, y2, x1+cr, y2, layer);
+                    // Left edge
+                    addLine(x1, y2-cr, x1, y1+cr, layer);
+                    // Corner arcs
+                    addArc(x1+cr, y1+cr, cr, 180, 270, layer); // bottom-left
+                    addArc(x2-cr, y1+cr, cr, 270, 360, layer); // bottom-right
+                    addArc(x2-cr, y2-cr, cr, 0, 90, layer);     // top-right
+                    addArc(x1+cr, y2-cr, cr, 90, 180, layer);   // top-left
+                }
+            }
+
+            // Note: DXF Y-axis is bottom-up, we flip
+
+            // Outer border
+            drawRoundedRect(0, 0, w, h, r, 'BORDER');
+
+            // Inner border
+            if (showInnerBorder) {
+                drawRoundedRect(margin, margin, w - margin, h - margin, Math.max(0, r - 1), 'BORDER');
+            }
+
+            // Mount holes
+            if (showMountHoles) {
+                const holeR = 1.5;
+                const hm = margin + 2;
+                addCircle(hm, hm, holeR, 'HOLES');
+                addCircle(w - hm, hm, holeR, 'HOLES');
+                addCircle(hm, h - hm, holeR, 'HOLES');
+                addCircle(w - hm, h - hm, holeR, 'HOLES');
+            }
+
+            // Collect data rows (same as SVG)
+            const dataRows = [];
+            const manufacturer = getVal('manufacturer');
+            const address = getVal('address');
+            const model = getVal('model');
+            const serial = getVal('serial');
+            const partno = getVal('partno');
+            const year = getVal('year');
+            const country = getVal('country');
+            const voltage = getVal('voltage');
+            const phase = getVal('phase');
+            const frequency = getVal('frequency');
+            const current = getVal('current');
+            const power = getVal('power');
+            const powerfactor = getVal('powerfactor');
+            const iprating = getVal('iprating');
+            const insclass = getVal('insclass');
+            const efficiency = getVal('efficiency');
+            const rpm = getVal('rpm');
+            const weight = getVal('weight');
+            const pressure = getVal('pressure');
+            const temperature = getVal('temperature');
+            const flowrate = getVal('flowrate');
+            const framesize = getVal('framesize');
+            const ambienttemp = getVal('ambienttemp');
+
+            if (model) dataRows.push(['Model', model]);
+            if (partno) dataRows.push(['Type', partno]);
+            if (serial) dataRows.push(['S/N', serial]);
+            if (year) dataRows.push(['Year', year]);
+
+            let elecLine = [];
+            if (voltage) elecLine.push(voltage + 'V');
+            if (phase) elecLine.push(phase + 'Ph');
+            if (frequency) elecLine.push(frequency + 'Hz');
+            if (elecLine.length) dataRows.push(['Supply', elecLine.join(' / ')]);
+
+            if (power) dataRows.push(['Power', power + ' kW']);
+            if (current) dataRows.push(['Current', current + ' A']);
+            if (powerfactor) dataRows.push(['Cos phi', powerfactor]);
+            if (rpm) dataRows.push(['Speed', rpm + ' RPM']);
+
+            let ratingsLine = [];
+            if (iprating) ratingsLine.push(iprating);
+            if (insclass) ratingsLine.push('Cl.' + insclass);
+            if (efficiency) ratingsLine.push(efficiency);
+            if (ratingsLine.length) dataRows.push(['Rating', ratingsLine.join(' / ')]);
+
+            if (framesize) dataRows.push(['Frame', framesize]);
+            if (weight) dataRows.push(['Weight', weight + ' kg']);
+            if (pressure) dataRows.push(['Max Press.', pressure + ' bar']);
+            if (temperature) dataRows.push(['Max Temp.', temperature + 'C']);
+            if (flowrate) dataRows.push(['Flow', flowrate + ' m3/h']);
+            if (ambienttemp) dataRows.push(['Amb. Temp', ambienttemp]);
+            if (country) dataRows.push(['Origin', country]);
+
+            customLines.forEach(cl => {
+                if (cl.label || cl.value) {
+                    dataRows.push([cl.label, cl.value]);
+                }
+            });
+
+            const scale = Math.min(w / 120, h / 80);
+            const titleSize = Math.max(2.5, 3.5 * scale);
+            const labelSize = Math.max(1.8, 2.2 * scale);
+            const valueSize = Math.max(1.8, 2.5 * scale);
+            const addressSize = Math.max(1.5, 1.8 * scale);
+            const lineHeight = Math.max(3, 3.5 * scale);
+
+            const contentLeft = margin + 1.5;
+            let yPos = h - margin - 2; // start from top in DXF coords
+
+            // Manufacturer (centered at top)
+            if (manufacturer) {
+                yPos -= titleSize;
+                addText(w / 2, yPos, titleSize, manufacturer, 'TEXT', 1);
+                yPos -= 1;
+            }
+
+            // Address
+            if (address) {
+                yPos -= addressSize;
+                addText(w / 2, yPos, addressSize, address, 'TEXT', 1);
+                yPos -= 1;
+            }
+
+            // Separator
+            yPos -= 1;
+            addLine(contentLeft, yPos, w - margin - 1.5, yPos, 'BORDER');
+            yPos -= 2;
+
+            // Data rows
+            const labelColWidth = 22 * scale;
+
+            dataRows.forEach(([label, value]) => {
+                yPos -= lineHeight;
+                addText(contentLeft, yPos, labelSize, label + ':', 'TEXT', 0);
+                addText(contentLeft + labelColWidth, yPos, valueSize, value, 'TEXT', 0);
+            });
+
+            // CE Mark text at bottom
+            if (activeSymbols.ce) {
+                addText(contentLeft, margin + 2, titleSize, 'CE', 'SYMBOLS', 0);
+            }
+
+            if (activeSymbols.ukca) {
+                const offset = activeSymbols.ce ? titleSize * 2 + 4 : 0;
+                addText(contentLeft + offset, margin + 2, labelSize * 1.2, 'UKCA', 'SYMBOLS', 0);
+            }
+
+            // QR placeholder
+            if (showQR) {
+                const qrSize = 12 * scale;
+                const qrX = w - margin - 1.5 - qrSize;
+                const qrY = yPos + lineHeight;
+                addLine(qrX, qrY, qrX + qrSize, qrY, 'QR');
+                addLine(qrX + qrSize, qrY, qrX + qrSize, qrY + qrSize, 'QR');
+                addLine(qrX + qrSize, qrY + qrSize, qrX, qrY + qrSize, 'QR');
+                addLine(qrX, qrY + qrSize, qrX, qrY, 'QR');
+            }
+
+            // Build DXF file
+            const dxf = [
+                // HEADER section
+                '  0', 'SECTION',
+                '  2', 'HEADER',
+                '  9', '$ACADVER',
+                '  1', 'AC1015',
+                '  9', '$INSUNITS',
+                ' 70', '4',
+                '  9', '$MEASUREMENT',
+                ' 70', '1',
+                '  9', '$EXTMIN',
+                ' 10', '0.0',
+                ' 20', '0.0',
+                ' 30', '0.0',
+                '  9', '$EXTMAX',
+                ' 10', w.toFixed(6),
+                ' 20', h.toFixed(6),
+                ' 30', '0.0',
+                '  0', 'ENDSEC',
+
+                // TABLES section
+                '  0', 'SECTION',
+                '  2', 'TABLES',
+
+                // LTYPE table
+                '  0', 'TABLE',
+                '  2', 'LTYPE',
+                '  5', '5',
+                '100', 'AcDbSymbolTable',
+                ' 70', '1',
+                '  0', 'LTYPE',
+                '  5', '14',
+                '100', 'AcDbSymbolTableRecord',
+                '100', 'AcDbLinetypeTableRecord',
+                '  2', 'CONTINUOUS',
+                ' 70', '0',
+                '  3', 'Solid line',
+                ' 72', '65',
+                ' 73', '0',
+                ' 40', '0.0',
+                '  0', 'ENDTAB',
+
+                // LAYER table
+                '  0', 'TABLE',
+                '  2', 'LAYER',
+                '  5', '2',
+                '100', 'AcDbSymbolTable',
+                ' 70', '5',
+
+                '  0', 'LAYER',
+                '  5', '50',
+                '100', 'AcDbSymbolTableRecord',
+                '100', 'AcDbLayerTableRecord',
+                '  2', '0',
+                ' 70', '0',
+                ' 62', '7',
+                '  6', 'CONTINUOUS',
+
+                '  0', 'LAYER',
+                '  5', '51',
+                '100', 'AcDbSymbolTableRecord',
+                '100', 'AcDbLayerTableRecord',
+                '  2', 'BORDER',
+                ' 70', '0',
+                ' 62', '1',
+                '  6', 'CONTINUOUS',
+
+                '  0', 'LAYER',
+                '  5', '52',
+                '100', 'AcDbSymbolTableRecord',
+                '100', 'AcDbLayerTableRecord',
+                '  2', 'TEXT',
+                ' 70', '0',
+                ' 62', '7',
+                '  6', 'CONTINUOUS',
+
+                '  0', 'LAYER',
+                '  5', '53',
+                '100', 'AcDbSymbolTableRecord',
+                '100', 'AcDbLayerTableRecord',
+                '  2', 'SYMBOLS',
+                ' 70', '0',
+                ' 62', '3',
+                '  6', 'CONTINUOUS',
+
+                '  0', 'LAYER',
+                '  5', '54',
+                '100', 'AcDbSymbolTableRecord',
+                '100', 'AcDbLayerTableRecord',
+                '  2', 'HOLES',
+                ' 70', '0',
+                ' 62', '5',
+                '  6', 'CONTINUOUS',
+
+                '  0', 'LAYER',
+                '  5', '55',
+                '100', 'AcDbSymbolTableRecord',
+                '100', 'AcDbLayerTableRecord',
+                '  2', 'QR',
+                ' 70', '0',
+                ' 62', '4',
+                '  6', 'CONTINUOUS',
+
+                '  0', 'ENDTAB',
+
+                // STYLE table
+                '  0', 'TABLE',
+                '  2', 'STYLE',
+                '  5', '3',
+                '100', 'AcDbSymbolTable',
+                ' 70', '1',
+                '  0', 'STYLE',
+                '  5', '11',
+                '100', 'AcDbSymbolTableRecord',
+                '100', 'AcDbTextStyleTableRecord',
+                '  2', 'STANDARD',
+                ' 70', '0',
+                ' 40', '0.0',
+                ' 41', '1.0',
+                ' 50', '0.0',
+                ' 71', '0',
+                ' 42', '2.5',
+                '  3', 'arial.ttf',
+                '  4', '',
+                '  0', 'ENDTAB',
+
+                '  0', 'ENDSEC',
+
+                // ENTITIES section
+                '  0', 'SECTION',
+                '  2', 'ENTITIES',
+                ...entities,
+                '  0', 'ENDSEC',
+
+                '  0', 'EOF'
+            ];
+
+            return dxf.join('\n');
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        // Initialize
+        updatePreview();
+    </script>
+</body>
+</html>
