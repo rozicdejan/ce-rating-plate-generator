@@ -73,8 +73,10 @@ def safe_filename(text: str) -> str:
     text = text.strip("._")
     return text[:80] or "laser_label"
 
+
 def escape_xml(text: str) -> str:
     return html.escape(text or "", quote=False)
+
 
 def get_mode_colors(mode: str):
     if mode == "Anodized aluminium (negative)":
@@ -95,6 +97,7 @@ def get_mode_colors(mode: str):
         "preview_bg": "#f3f3f3",
     }
 
+
 def build_rows(owner: str, tool_number: str, part_desc: str):
     return [
         ("Property of:", owner),
@@ -102,8 +105,10 @@ def build_rows(owner: str, tool_number: str, part_desc: str):
         ("Part description:", part_desc),
     ]
 
+
 def get_font_prop(weight: str):
     return FontProperties(family=VECTOR_FONT_FAMILY, weight=weight)
+
 
 def make_base_text_path(text: str, weight: str):
     if not text:
@@ -113,6 +118,7 @@ def make_base_text_path(text: str, weight: str):
     if bbox.width <= 0 or bbox.height <= 0:
         return None, None
     return tp, bbox
+
 
 def fit_text_for_box(text: str, desired_h_mm: float, box_w_mm: float, box_h_mm: float, weight: str):
     raw = (text or "").strip()
@@ -150,6 +156,7 @@ def fit_text_for_box(text: str, desired_h_mm: float, box_w_mm: float, box_h_mm: 
     scale = min(target_h / bbox.height, box_w_mm / bbox.width)
     return fallback, base_path, bbox, scale, bbox.height * scale
 
+
 def place_path_in_box(base_path, scale, box_x, box_y, box_w, box_h, align="left", pad_x=0.0):
     path = base_path.transformed(Affine2D().scale(scale, -scale))
     bbox = path.get_extents()
@@ -163,6 +170,7 @@ def place_path_in_box(base_path, scale, box_x, box_y, box_w, box_h, align="left"
 
     ty = box_y + (box_h - bbox.height) / 2.0 - bbox.y0
     return path.transformed(Affine2D().translate(tx, ty))
+
 
 def mpl_path_to_svg_d(path_obj):
     if path_obj is None:
@@ -186,6 +194,7 @@ def mpl_path_to_svg_d(path_obj):
             out.append("Z")
     return " ".join(out)
 
+
 def add_rounded_rect_dxf(msp, x, y, w, h, r, layer):
     r = max(0.0, min(r, w / 2.0, h / 2.0))
     if r <= 0:
@@ -203,8 +212,10 @@ def add_rounded_rect_dxf(msp, x, y, w, h, r, layer):
     msp.add_arc((x + r, y + h - r), r, 90, 180, dxfattribs={"layer": layer})
     msp.add_arc((x + r, y + r), r, 180, 270, dxfattribs={"layer": layer})
 
+
 def row_box(top_y, height):
     return {"y": top_y, "h": height}
+
 
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
@@ -213,6 +224,7 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
         for c in df.columns
     ]
     return df
+
 
 def parse_mode(value, default_mode):
     v = str(value).strip() if pd.notna(value) else ""
@@ -232,6 +244,7 @@ def parse_mode(value, default_mode):
     }
     return lookup.get(v.lower(), default_mode if v not in ALLOWED_MODES else v)
 
+
 def parse_optional_float(value, default_value):
     if pd.isna(value):
         return default_value
@@ -240,6 +253,7 @@ def parse_optional_float(value, default_value):
     except Exception:
         return default_value
 
+
 def load_tabular_file(uploaded_file):
     name = uploaded_file.name.lower()
     if name.endswith(".csv"):
@@ -247,6 +261,7 @@ def load_tabular_file(uploaded_file):
     if name.endswith(".xlsx") or name.endswith(".xls"):
         return pd.read_excel(uploaded_file)
     raise ValueError("Unsupported file type. Use CSV or XLSX.")
+
 
 def make_unique_base_names(names):
     counts = Counter()
@@ -258,6 +273,17 @@ def make_unique_base_names(names):
         else:
             result.append(f"{n}_{counts[n]}")
     return result
+
+
+def make_preview_svg(svg_text: str, label_w_mm: float, label_h_mm: float, px_per_mm: float) -> str:
+    preview_w_px = label_w_mm * px_per_mm
+    preview_h_px = label_h_mm * px_per_mm
+
+    svg_preview = re.sub(r'width="[^"]+"', f'width="{preview_w_px}px"', svg_text, count=1)
+    svg_preview = re.sub(r'height="[^"]+"', f'height="{preview_h_px}px"', svg_preview, count=1)
+
+    return svg_preview
+
 
 # ------------------------------------------------------------
 # SVG generation with vector outlines
@@ -417,6 +443,7 @@ def generate_svg(
 
     return svg, meta
 
+
 # ------------------------------------------------------------
 # DXF generation
 # ------------------------------------------------------------
@@ -453,7 +480,6 @@ def generate_dxf(
         {"x": right_x, "w": right_w, "row": row_box(row2_y, ROW2_H)},
         {"x": right_x, "w": right_w, "row": row_box(row3_y, ROW3_H)},
     ]
-    requested = [fs1, fs2, fs3]
 
     doc = ezdxf.new("R2010")
     doc.header["$INSUNITS"] = 4
@@ -527,6 +553,7 @@ def generate_dxf(
     stream = io.StringIO()
     doc.write(stream)
     return stream.getvalue().encode("utf-8")
+
 
 # ------------------------------------------------------------
 # ZIP generation for batch
@@ -641,6 +668,7 @@ def build_batch_zip(
     zip_buffer.seek(0)
     return zip_buffer.getvalue(), pd.DataFrame(preview_records)
 
+
 # ------------------------------------------------------------
 # UI
 # ------------------------------------------------------------
@@ -652,6 +680,8 @@ tab_single, tab_batch = st.tabs(["Single label", "Batch CSV / Excel"])
 # Shared settings
 with st.sidebar:
     st.header("Shared geometry")
+
+    preview_scale = st.slider("Preview scale (px/mm)", 4.0, 20.0, 8.5, 0.5)
 
     mode_default = st.selectbox(
         "Default mode",
@@ -696,7 +726,8 @@ with tab_single:
         hole_offset_single = st.number_input("Hole offset override (mm)", min_value=3.0, max_value=8.0, value=float(hole_offset_default), step=0.1)
 
     with right_col:
-        st.subheader("Preview")
+        st.subheader("Live preview")
+
         svg_output, meta = generate_svg(
             owner=owner,
             tool_number=tool_number,
@@ -720,24 +751,29 @@ with tab_single:
         )
 
         colors = get_mode_colors(mode_single)
+        preview_svg = make_preview_svg(svg_output, LABEL_W, LABEL_H, preview_scale)
+        preview_height = int(LABEL_H * preview_scale + 80)
+
         preview_html = f"""
         <div style="
             background:{colors['preview_bg']};
             padding:20px;
             border-radius:12px;
             border:1px solid #d0d0d0;
-            min-height:320px;
+            min-height:{preview_height}px;
             display:flex;
             justify-content:center;
-            align-items:center;">
+            align-items:center;
+            overflow:auto;">
             <div style="padding:10px; border-radius:10px;">
-                {svg_output}
+                {preview_svg}
             </div>
         </div>
         """
-        components.html(preview_html, height=360)
+        components.html(preview_html, height=preview_height + 40)
 
         st.caption(
+            f"Preview scale: {preview_scale:.1f} px/mm | "
             f"Right column width: {meta['right_w']:.1f} mm | "
             f"Used heights L: {meta['left_sizes'][0]:.2f}, {meta['left_sizes'][1]:.2f}, {meta['left_sizes'][2]:.2f} mm | "
             f"R: {meta['right_sizes'][0]:.2f}, {meta['right_sizes'][1]:.2f}, {meta['right_sizes'][2]:.2f} mm"
@@ -855,11 +891,12 @@ Optional columns:
                 selected_idx = row_labels.index(selected_label)
                 selected_row = preview_df.iloc[selected_idx]
 
-                preview_svg, _ = generate_svg(
+                selected_mode = parse_mode(selected_row.get("mode", mode_default), mode_default)
+                preview_svg_raw, _ = generate_svg(
                     owner=str(selected_row["property_of"]),
                     tool_number=str(selected_row["tool_number"]),
                     part_desc=str(selected_row["part_description"]),
-                    mode=parse_mode(selected_row.get("mode", mode_default), mode_default),
+                    mode=selected_mode,
                     hole_dia=parse_optional_float(selected_row.get("hole_dia", hole_dia_default), hole_dia_default),
                     hole_offset=parse_optional_float(selected_row.get("hole_offset", hole_offset_default), hole_offset_default),
                     corner_r=corner_r,
@@ -877,24 +914,28 @@ Optional columns:
                     show_border=show_border,
                 )
 
-                colors = get_mode_colors(parse_mode(selected_row.get("mode", mode_default), mode_default))
+                colors = get_mode_colors(selected_mode)
+                preview_svg = make_preview_svg(preview_svg_raw, LABEL_W, LABEL_H, preview_scale)
+                preview_height = int(LABEL_H * preview_scale + 80)
+
                 preview_html = f"""
                 <div style="
                     background:{colors['preview_bg']};
                     padding:20px;
                     border-radius:12px;
                     border:1px solid #d0d0d0;
-                    min-height:280px;
+                    min-height:{preview_height}px;
                     display:flex;
                     justify-content:center;
-                    align-items:center;">
+                    align-items:center;
+                    overflow:auto;">
                     <div style="padding:10px; border-radius:10px;">
                         {preview_svg}
                     </div>
                 </div>
                 """
                 st.markdown("### Selected row preview")
-                components.html(preview_html, height=320)
+                components.html(preview_html, height=preview_height + 40)
 
                 zip_bytes, batch_result_df = build_batch_zip(
                     df=preview_df,
@@ -943,17 +984,16 @@ Ledinek,TL-00126,Clamp plate,,,
 with st.expander("Notes"):
     st.write(
         """
+Preview scale only affects on-screen display.
+
+Exports remain unchanged:
+- SVG stays at 78.5 × 21 mm
+- DXF stays in real millimeter geometry
+
 Batch mode behavior:
 - one SVG and one DXF is created for every row
 - files are packed into one ZIP
 - file names are based on `tool_number`
 - duplicate tool numbers automatically get `_2`, `_3`, etc.
-
-Optional per-row overrides:
-- `mode`
-- `hole_dia` or `hole_size`
-- `hole_offset`
-
-Everything else uses the shared sidebar settings.
 """
     )
