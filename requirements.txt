@@ -4,3 +4,5 @@ matplotlib
 pandas
 openpyxl
 svgwrite
+pillow
+cairosvg
