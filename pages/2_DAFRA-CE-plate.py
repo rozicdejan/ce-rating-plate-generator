@@ -367,20 +367,20 @@ def draw_bin_logo_svg(dwg, parent, x, y, w, h):
     parent.add(dwg.line((bx + bw * 0.86, by + bh * 0.10), (bx + bw * 0.16, by + bh * 0.92), stroke="black", stroke_width=stroke))
 
 def draw_header_logo_svg(dwg, parent, x, y, size):
-    grp = dwg.g()
     vb = 256.0
     scale = size / vb
-    grp.translate(x, y)
-    grp.add(dwg.circle(center=(128 * scale, 128 * scale), r=110 * scale, fill="black"))
-    path = dwg.path(
-        d="M28 88 H150 A42 42 0 0 1 150 168 H28",
-        fill="none",
-        stroke="white",
-        stroke_width=18 * scale,
-        stroke_linecap="round",
-        stroke_linejoin="round",
+    grp = dwg.g(transform=f"translate({x},{y}) scale({scale})")
+    grp.add(dwg.circle(center=(128, 128), r=110, fill="black"))
+    grp.add(
+        dwg.path(
+            d="M28 88 H150 A42 42 0 0 1 150 168 H28",
+            fill="none",
+            stroke="white",
+            stroke_width=18,
+            stroke_linecap="round",
+            stroke_linejoin="round",
+        )
     )
-    grp.add(path)
     parent.add(grp)
 
 
