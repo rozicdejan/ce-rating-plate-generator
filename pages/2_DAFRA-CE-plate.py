@@ -13,7 +13,6 @@ st.set_page_config(
     layout="wide",
 )
 
-
 # -----------------------------------------------------------------------------
 # Defaults
 # -----------------------------------------------------------------------------
@@ -23,9 +22,12 @@ DEFAULTS = {
     "company_line3": "3310 Žalec, Slovenia",
     "type_text": "RVD-32-720HS",
     "no_text": "1330117",
+    "year_built": "2026",
+    "year_refurbished": "",
     "current_type": "L1/L2/L3/N/PE",
     "hz_text": "50",
     "working_voltage": "380",
+    "air_pressure": "6",
     "control_voltage_dc": "24",
     "control_voltage_ac": "220",
     "machine_current": "8",
@@ -34,14 +36,13 @@ DEFAULTS = {
     "footer_no": "507 598.4",
 }
 
-
 # -----------------------------------------------------------------------------
 # Sidebar
 # -----------------------------------------------------------------------------
 with st.sidebar:
     st.header("Plate geometry")
     plate_width = st.number_input("Width [mm]", min_value=80.0, max_value=400.0, value=160.0, step=5.0)
-    plate_height = st.number_input("Height [mm]", min_value=60.0, max_value=250.0, value=120.0, step=5.0)
+    plate_height = st.number_input("Height [mm]", min_value=95.0, max_value=250.0, value=140.0, step=5.0)
     corner_radius = st.number_input("Corner radius [mm]", min_value=0.0, max_value=20.0, value=0.0, step=0.5)
     hole_diameter = st.number_input("Mounting hole diameter [mm]", min_value=0.0, max_value=12.0, value=3.5, step=0.5)
     hole_offset = st.number_input("Hole offset from corner [mm]", min_value=2.0, max_value=20.0, value=6.0, step=0.5)
@@ -51,7 +52,6 @@ with st.sidebar:
     show_left_holes = st.checkbox("Show left holes", value=True)
     show_right_holes = st.checkbox("Show right holes", value=True)
     show_warning_symbol = st.checkbox("Show warning symbol", value=True)
-
 
 left_col, right_col = st.columns([1.0, 1.25], gap="large")
 
@@ -65,23 +65,24 @@ with left_col:
     c1, c2 = st.columns(2)
     with c1:
         type_text = st.text_input("Type", value=DEFAULTS["type_text"])
+        year_built = st.text_input("Leto izdelave", value=DEFAULTS["year_built"])
         current_type = st.text_input("Current / nature du courant", value=DEFAULTS["current_type"])
         working_voltage = st.text_input("Working voltage [V]", value=DEFAULTS["working_voltage"])
+        air_pressure = st.text_input("Compressed air / working pressure [bar]", value=DEFAULTS["air_pressure"])
         control_voltage_dc = st.text_input("Controlling voltage DC [V]", value=DEFAULTS["control_voltage_dc"])
         machine_current = st.text_input("Machine nominal current [A]", value=DEFAULTS["machine_current"])
-        schematic_no = st.text_input("Schematic No.", value=DEFAULTS["schematic_no"])
 
     with c2:
         no_text = st.text_input("No.", value=DEFAULTS["no_text"])
+        year_refurbished = st.text_input("Leto obnove", value=DEFAULTS["year_refurbished"])
         hz_text = st.text_input("Hz", value=DEFAULTS["hz_text"])
         control_voltage_ac = st.text_input("Controlling voltage AC [V]", value=DEFAULTS["control_voltage_ac"])
         fuse_current = st.text_input("Fuse nominal current [A]", value=DEFAULTS["fuse_current"])
+        schematic_no = st.text_input("Schematic No.", value=DEFAULTS["schematic_no"])
         footer_no = st.text_input("Small footer number", value=DEFAULTS["footer_no"])
 
-
 st.title("CE Marking & Rating Plate Designer")
-st.caption("Haulick-style machine plate layout with live preview, SVG export and DXF export.")
-
+st.caption("Haulick-style machine plate layout with added Baujahr / Year built / Year refurbished row.")
 
 # -----------------------------------------------------------------------------
 # Helpers
@@ -121,16 +122,35 @@ def draw_svg_text(
     parent.add(el)
 
 
-def draw_svg_multiline(
+def draw_svg_box_text(
     dwg,
     parent,
-    lines,
+    text,
     x,
     y,
+    w,
+    h,
     size,
-    line_gap,
-    first_bold=True,
+    weight="normal",
+    family="Arial, Helvetica, sans-serif",
 ):
+    text = clamp_text(text)
+    if not text:
+        return
+    el = dwg.text(
+        text,
+        insert=(x + w / 2, y + h / 2),
+        font_size=size,
+        font_family=family,
+        font_weight=weight,
+        text_anchor="middle",
+        fill="black",
+    )
+    el["dominant-baseline"] = "middle"
+    parent.add(el)
+
+
+def draw_svg_multiline(dwg, parent, lines, x, y, size, line_gap, first_bold=True):
     for idx, line in enumerate(lines):
         if not line:
             continue
@@ -156,18 +176,19 @@ def add_dxf_text(msp, text, x, y, height, plate_h, align=TextEntityAlignment.LEF
     text = clamp_text(text)
     if not text:
         return
-    ent = msp.add_text(
-        text,
-        dxfattribs={
-            "height": max(height, 1.0),
-            "rotation": rotation,
-        },
-    )
+    ent = msp.add_text(text, dxfattribs={"height": max(height, 1.0), "rotation": rotation})
     ent.set_placement((x, dy(plate_h, y)), align=align)
 
 
-def add_dxf_multiline(msp, lines, x, y, height, line_gap, plate_h, first_bold=False):
-    # DXF text bold depends on font/style support, so we keep a single style.
+def add_dxf_box_text(msp, text, x, y, w, h, height, plate_h):
+    text = clamp_text(text)
+    if not text:
+        return
+    ent = msp.add_text(text, dxfattribs={"height": max(height, 1.0)})
+    ent.set_placement((x + w / 2, dy(plate_h, y + h / 2)), align=TextEntityAlignment.MIDDLE_CENTER)
+
+
+def add_dxf_multiline(msp, lines, x, y, height, line_gap, plate_h):
     for idx, line in enumerate(lines):
         if not line:
             continue
@@ -175,7 +196,6 @@ def add_dxf_multiline(msp, lines, x, y, height, line_gap, plate_h, first_bold=Fa
 
 
 def draw_warning_symbol_svg(dwg, parent, x, y, w, h):
-    # Normalized lightning bolt shape inside its panel
     pts = [
         (x + 0.42 * w, y + 0.18 * h),
         (x + 0.67 * w, y + 0.18 * h),
@@ -185,13 +205,7 @@ def draw_warning_symbol_svg(dwg, parent, x, y, w, h):
         (x + 0.52 * w, y + 0.62 * h),
         (x + 0.27 * w, y + 0.62 * h),
     ]
-    parent.add(
-        dwg.polygon(
-            points=pts,
-            fill="#c60000",
-            stroke="none",
-        )
-    )
+    parent.add(dwg.polygon(points=pts, fill="#c60000", stroke="none"))
 
 
 def draw_warning_symbol_dxf(msp, x, y, w, h, plate_h):
@@ -219,16 +233,18 @@ def draw_box_svg(dwg, parent, x, y, w, h, stroke_w=0.28):
         )
     )
 
-
 # -----------------------------------------------------------------------------
-# SVG plate
+# SVG
 # -----------------------------------------------------------------------------
 def generate_plate_svg(w: float, h: float) -> str:
     dwg = svgwrite.Drawing(size=(f"{w}mm", f"{h}mm"), viewBox=f"0 0 {w} {h}")
     dwg.attribs["style"] = "background:white"
 
-    sx = w / 160.0
-    sy = h / 120.0
+    template_w = 160.0
+    template_h = 140.0
+
+    sx = w / template_w
+    sy = h / template_h
 
     def X(v): return v * sx
     def Y(v): return v * sy
@@ -275,33 +291,29 @@ def generate_plate_svg(w: float, h: float) -> str:
     iw = w - 2 * border_offset
     ih = h - 2 * border_offset
 
-    # Left warning panel
     panel_w = X(44)
-    content.add(dwg.line(start=(ix + panel_w, iy), end=(ix + panel_w, iy + ih), stroke="black", stroke_width=0.35))
+    content.add(
+        dwg.line(
+            start=(ix + panel_w, iy),
+            end=(ix + panel_w, iy + ih),
+            stroke="black",
+            stroke_width=0.35,
+        )
+    )
 
     if show_warning_symbol:
-        draw_warning_symbol_svg(
-            dwg,
-            content,
-            ix + X(3),
-            iy + Y(14),
-            panel_w - X(6),
-            ih - Y(22),
-        )
+        draw_warning_symbol_svg(dwg, content, ix + X(3), iy + Y(14), panel_w - X(6), ih - Y(24))
 
-    # Main content area
     mx = ix + panel_w + X(4)
-    my = iy + Y(4)
+    my = iy + Y(3)
     mr = ix + iw - X(4)
     main_w = mr - mx
 
-    # Top centered text
     cx = mx + main_w / 2
-    draw_svg_text(dwg, content, company_name, cx, my + Y(8), Y(8.5), weight="bold", anchor="middle")
-    draw_svg_text(dwg, content, company_line2, cx, my + Y(15), Y(4.2), weight="normal", anchor="middle")
-    draw_svg_text(dwg, content, company_line3, cx, my + Y(22), Y(4.2), weight="normal", anchor="middle")
+    draw_svg_text(dwg, content, company_name, cx, my + Y(7), Y(7.5), weight="bold", anchor="middle")
+    draw_svg_text(dwg, content, company_line2, cx, my + Y(13.0), Y(3.7), anchor="middle")
+    draw_svg_text(dwg, content, company_line3, cx, my + Y(18.4), Y(3.7), anchor="middle")
 
-    # Layout coordinates
     label_x = mx + X(0)
     box1_x = mx + X(22)
     box1_w = X(40)
@@ -313,140 +325,132 @@ def generate_plate_svg(w: float, h: float) -> str:
     single_box_x = mx + X(73)
     single_box_w = X(28)
 
-    small_font = Y(3.2)
-    value_font = Y(3.6)
-    line_gap = Y(3.9)
+    # For year row: 2 small boxes in one line
+    year_box1_x = mx + X(73)
+    year_box_w = X(12.5)
+    year_gap = X(3.0)
+    year_box2_x = year_box1_x + year_box_w + year_gap
 
-    # Row 1: Type / No.
-    y = my + Y(31)
-    draw_svg_text(dwg, content, "Type", label_x, y, small_font, weight="bold")
-    draw_box_svg(dwg, content, box1_x, y - Y(2.6), box1_w, Y(4.8))
-    draw_svg_text(dwg, content, type_text, box1_x + X(2), y, value_font)
+    small_font = Y(2.6)
+    value_font = Y(3.15)
+    line_gap = Y(2.45)
+    box_h = Y(4.6)
 
-    draw_svg_text(dwg, content, "No.", box2_label_x, y, small_font, weight="bold")
-    draw_box_svg(dwg, content, box2_x, y - Y(2.6), box2_w, Y(4.8))
-    draw_svg_text(dwg, content, no_text, box2_x + X(2), y, value_font)
+    y1 = my + Y(27.0)   # Type / No.
+    y2 = my + Y(36.0)   # Year built / refurbished
+    y3 = my + Y(47.5)   # Current / Hz
+    y4 = my + Y(59.5)   # Voltage
+    y5 = my + Y(71.5)   # Air pressure
+    y6 = my + Y(83.5)   # Control voltage
+    y6b = y6 + Y(5.0)
+    y7 = my + Y(96.5)   # Machine current
+    y8 = my + Y(108.5)  # Fuse current
+    y9 = my + Y(120.0)  # Schematic
 
-    # Row 2: Stromart / Hz
-    y = my + Y(40)
+    # Row 1
+    draw_svg_text(dwg, content, "Type", label_x, y1, small_font, weight="bold")
+    draw_box_svg(dwg, content, box1_x, y1 - box_h / 2, box1_w, box_h)
+    draw_svg_box_text(dwg, content, type_text, box1_x, y1 - box_h / 2, box1_w, box_h, value_font)
+
+    draw_svg_text(dwg, content, "No.", box2_label_x, y1, small_font, weight="bold")
+    draw_box_svg(dwg, content, box2_x, y1 - box_h / 2, box2_w, box_h)
+    draw_svg_box_text(dwg, content, no_text, box2_x, y1 - box_h / 2, box2_w, box_h, value_font)
+
+    # Row 2 - Baujahr / leto izdelave + leto obnove
     draw_svg_multiline(
         dwg,
         content,
-        ["Stromart", "Current", "Nature du courant"],
+        ["Baujahr / Jahr der Überholung", "Year built / Year refurbished", "Année de fabrication / Année de rénovation"],
         label_x,
-        y,
+        y2,
         small_font,
         line_gap,
-        first_bold=True,
     )
-    draw_box_svg(dwg, content, box1_x, y - Y(2.6), box1_w, Y(4.8))
-    draw_svg_text(dwg, content, current_type, box1_x + X(2), y, value_font)
+    draw_box_svg(dwg, content, year_box1_x, y2 - box_h / 2, year_box_w, box_h)
+    draw_svg_box_text(dwg, content, year_built, year_box1_x, y2 - box_h / 2, year_box_w, box_h, value_font)
 
-    draw_svg_text(dwg, content, "Hz", box2_label_x, y, small_font, weight="bold")
-    draw_box_svg(dwg, content, box2_x, y - Y(2.6), box2_w, Y(4.8))
-    draw_svg_text(dwg, content, hz_text, box2_x + box2_w / 2, y, value_font, anchor="middle")
+    draw_box_svg(dwg, content, year_box2_x, y2 - box_h / 2, year_box_w, box_h)
+    draw_svg_box_text(dwg, content, year_refurbished, year_box2_x, y2 - box_h / 2, year_box_w, box_h, value_font)
 
-    # Row 3: Working voltage
-    y = my + Y(56)
+    # Row 3
+    draw_svg_multiline(dwg, content, ["Stromart", "Current", "Nature du courant"], label_x, y3, small_font, line_gap)
+    draw_box_svg(dwg, content, box1_x, y3 - box_h / 2, box1_w, box_h)
+    draw_svg_box_text(dwg, content, current_type, box1_x, y3 - box_h / 2, box1_w, box_h, value_font)
+
+    draw_svg_text(dwg, content, "Hz", box2_label_x, y3, small_font, weight="bold")
+    draw_box_svg(dwg, content, box2_x, y3 - box_h / 2, box2_w, box_h)
+    draw_svg_box_text(dwg, content, hz_text, box2_x, y3 - box_h / 2, box2_w, box_h, value_font)
+
+    # Row 4
+    draw_svg_multiline(dwg, content, ["Betriebsspannung", "Working voltage", "Voltage de service"], label_x, y4, small_font, line_gap)
+    draw_svg_text(dwg, content, "V", unit_x, y4, small_font, weight="bold")
+    draw_box_svg(dwg, content, single_box_x, y4 - box_h / 2, single_box_w, box_h)
+    draw_svg_box_text(dwg, content, working_voltage, single_box_x, y4 - box_h / 2, single_box_w, box_h, value_font)
+
+    # Row 5
     draw_svg_multiline(
         dwg,
         content,
-        ["Betriebsspannung", "Working voltage", "Voltage de service"],
+        ["Betriebsdruck Druckluft", "Compressed air pressure", "Pression d'air comprimé"],
         label_x,
-        y,
+        y5,
         small_font,
         line_gap,
-        first_bold=True,
     )
-    draw_svg_text(dwg, content, "V", unit_x, y, small_font, weight="bold")
-    draw_box_svg(dwg, content, single_box_x, y - Y(2.6), single_box_w, Y(4.8))
-    draw_svg_text(dwg, content, working_voltage, single_box_x + single_box_w / 2, y, value_font, anchor="middle")
+    draw_svg_text(dwg, content, "bar", unit_x - X(2), y5, small_font, weight="bold")
+    draw_box_svg(dwg, content, single_box_x, y5 - box_h / 2, single_box_w, box_h)
+    draw_svg_box_text(dwg, content, air_pressure, single_box_x, y5 - box_h / 2, single_box_w, box_h, value_font)
 
-    # Row 4: Controlling voltage
-    y = my + Y(72)
-    draw_svg_multiline(
-        dwg,
-        content,
-        ["Steuerspannung", "Controlling voltage", "Voltage de commande"],
-        label_x,
-        y,
-        small_font,
-        line_gap,
-        first_bold=True,
-    )
-    draw_svg_text(dwg, content, "V", unit_x, y, small_font, weight="bold")
-    draw_box_svg(dwg, content, single_box_x, y - Y(2.8), single_box_w, Y(4.6))
-    draw_box_svg(dwg, content, single_box_x, y + Y(2.5), single_box_w, Y(4.6))
-    draw_svg_text(dwg, content, f"{control_voltage_dc}  =", single_box_x + X(3), y, value_font)
-    draw_svg_text(dwg, content, f"{control_voltage_ac}  ~", single_box_x + X(3), y + Y(5.3), value_font)
+    # Row 6
+    draw_svg_multiline(dwg, content, ["Steuerspannung", "Controlling voltage", "Voltage de commande"], label_x, y6, small_font, line_gap)
+    draw_svg_text(dwg, content, "V", unit_x, y6, small_font, weight="bold")
+    draw_box_svg(dwg, content, single_box_x, y6 - box_h / 2, single_box_w, box_h)
+    draw_svg_box_text(dwg, content, f"{control_voltage_dc} =", single_box_x, y6 - box_h / 2, single_box_w, box_h, value_font)
 
-    # Row 5: Machine nominal current
-    y = my + Y(87)
-    draw_svg_multiline(
-        dwg,
-        content,
-        ["Maschine Nennstrom", "Nominal current machine", "Machine intensité nominale"],
-        label_x,
-        y,
-        small_font,
-        line_gap,
-        first_bold=True,
-    )
-    draw_svg_text(dwg, content, "A", unit_x, y, small_font, weight="bold")
-    draw_box_svg(dwg, content, single_box_x, y - Y(2.6), single_box_w, Y(4.8))
-    draw_svg_text(dwg, content, machine_current, single_box_x + single_box_w / 2, y, value_font, anchor="middle")
+    draw_box_svg(dwg, content, single_box_x, y6b - box_h / 2, single_box_w, box_h)
+    draw_svg_box_text(dwg, content, f"{control_voltage_ac} ~", single_box_x, y6b - box_h / 2, single_box_w, box_h, value_font)
 
-    # Row 6: Fuse nominal current
-    y = my + Y(101)
-    draw_svg_multiline(
-        dwg,
-        content,
-        ["Sicherungs-Nennstrom", "Nominal current fuses", "Intensité de protection nominale"],
-        label_x,
-        y,
-        small_font,
-        line_gap,
-        first_bold=True,
-    )
-    draw_svg_text(dwg, content, "A", unit_x, y, small_font, weight="bold")
-    draw_box_svg(dwg, content, single_box_x, y - Y(2.6), single_box_w, Y(4.8))
-    draw_svg_text(dwg, content, fuse_current, single_box_x + single_box_w / 2, y, value_font, anchor="middle")
+    # Row 7
+    draw_svg_multiline(dwg, content, ["Maschine Nennstrom", "Nominal current machine", "Machine intensité nominale"], label_x, y7, small_font, line_gap)
+    draw_svg_text(dwg, content, "A", unit_x, y7, small_font, weight="bold")
+    draw_box_svg(dwg, content, single_box_x, y7 - box_h / 2, single_box_w, box_h)
+    draw_svg_box_text(dwg, content, machine_current, single_box_x, y7 - box_h / 2, single_box_w, box_h, value_font)
 
-    # Row 7: Schematic No.
-    y = my + Y(115)
-    draw_svg_multiline(
-        dwg,
-        content,
-        ["Schaltplan", "Schematic", "Schéma de connexions"],
-        label_x,
-        y,
-        small_font,
-        line_gap,
-        first_bold=True,
-    )
-    draw_svg_text(dwg, content, "No.", unit_x - X(6), y, small_font, weight="bold")
-    draw_box_svg(dwg, content, single_box_x - X(12), y - Y(2.6), single_box_w + X(12), Y(4.8))
-    draw_svg_text(dwg, content, schematic_no, single_box_x - X(10) + X(2), y, value_font)
+    # Row 8
+    draw_svg_multiline(dwg, content, ["Sicherungs-Nennstrom", "Nominal current fuses", "Intensité de protection nominale"], label_x, y8, small_font, line_gap)
+    draw_svg_text(dwg, content, "A", unit_x, y8, small_font, weight="bold")
+    draw_box_svg(dwg, content, single_box_x, y8 - box_h / 2, single_box_w, box_h)
+    draw_svg_box_text(dwg, content, fuse_current, single_box_x, y8 - box_h / 2, single_box_w, box_h, value_font)
 
-    # Bottom empty box
-    draw_box_svg(dwg, content, mx + X(4), iy + ih - Y(8), main_w - X(6), Y(4.6))
+    # Row 9
+    draw_svg_multiline(dwg, content, ["Schaltplan", "Schematic", "Schéma de connexions"], label_x, y9, small_font, line_gap)
+    draw_svg_text(dwg, content, "No.", unit_x - X(6), y9, small_font, weight="bold")
+    schematic_x = single_box_x - X(12)
+    schematic_w = single_box_w + X(12)
+    draw_box_svg(dwg, content, schematic_x, y9 - box_h / 2, schematic_w, box_h)
+    draw_svg_box_text(dwg, content, schematic_no, schematic_x, y9 - box_h / 2, schematic_w, box_h, value_font)
 
-    # Footer number
-    draw_svg_text(dwg, content, footer_no, mr - X(1), iy + ih - Y(0.8), Y(2.2), anchor="end")
+    bottom_box_h = Y(3.2)
+    bottom_box_y = iy + ih - Y(7.0)
+    draw_box_svg(dwg, content, mx + X(4), bottom_box_y, main_w - X(6), bottom_box_h)
+
+    draw_svg_text(dwg, content, footer_no, mr - X(1), iy + ih - Y(0.8), Y(1.9), anchor="end")
 
     return dwg.tostring()
 
-
 # -----------------------------------------------------------------------------
-# DXF plate
+# DXF
 # -----------------------------------------------------------------------------
 def generate_plate_dxf(w: float, h: float) -> bytes:
     doc = ezdxf.new("R2010", setup=True)
-    doc.units = 4  # millimeters
+    doc.units = 4
     msp = doc.modelspace()
 
-    sx = w / 160.0
-    sy = h / 120.0
+    template_w = 160.0
+    template_h = 140.0
+
+    sx = w / template_w
+    sy = h / template_h
 
     def X(v): return v * sx
     def Y(v): return v * sy
@@ -473,24 +477,17 @@ def generate_plate_dxf(w: float, h: float) -> bytes:
     msp.add_line((ix + panel_w, dy(h, iy)), (ix + panel_w, dy(h, iy + ih)))
 
     if show_warning_symbol:
-        draw_warning_symbol_dxf(
-            msp,
-            ix + X(3),
-            iy + Y(14),
-            panel_w - X(6),
-            ih - Y(22),
-            h,
-        )
+        draw_warning_symbol_dxf(msp, ix + X(3), iy + Y(14), panel_w - X(6), ih - Y(24), h)
 
     mx = ix + panel_w + X(4)
-    my = iy + Y(4)
+    my = iy + Y(3)
     mr = ix + iw - X(4)
     main_w = mr - mx
 
     cx = mx + main_w / 2
-    add_dxf_text(msp, company_name, cx, my + Y(8), Y(6.8), h, align=TextEntityAlignment.MIDDLE_CENTER)
-    add_dxf_text(msp, company_line2, cx, my + Y(15), Y(3.2), h, align=TextEntityAlignment.MIDDLE_CENTER)
-    add_dxf_text(msp, company_line3, cx, my + Y(22), Y(3.2), h, align=TextEntityAlignment.MIDDLE_CENTER)
+    add_dxf_text(msp, company_name, cx, my + Y(7), Y(5.8), h, align=TextEntityAlignment.MIDDLE_CENTER)
+    add_dxf_text(msp, company_line2, cx, my + Y(13.0), Y(2.8), h, align=TextEntityAlignment.MIDDLE_CENTER)
+    add_dxf_text(msp, company_line3, cx, my + Y(18.4), Y(2.8), h, align=TextEntityAlignment.MIDDLE_CENTER)
 
     label_x = mx + X(0)
     box1_x = mx + X(22)
@@ -503,72 +500,115 @@ def generate_plate_dxf(w: float, h: float) -> bytes:
     single_box_x = mx + X(73)
     single_box_w = X(28)
 
-    small_font = Y(2.8)
-    value_font = Y(3.0)
-    line_gap = Y(3.9)
+    year_box1_x = mx + X(73)
+    year_box_w = X(12.5)
+    year_gap = X(3.0)
+    year_box2_x = year_box1_x + year_box_w + year_gap
 
-    # Type / No.
-    y = my + Y(31)
-    add_dxf_text(msp, "Type", label_x, y, small_font, h)
-    add_dxf_rect(msp, box1_x, y - Y(2.6), box1_w, Y(4.8), h)
-    add_dxf_text(msp, type_text, box1_x + X(2), y, value_font, h)
+    small_font = Y(2.2)
+    value_font = Y(2.55)
+    line_gap = Y(2.45)
+    box_h = Y(4.6)
 
-    add_dxf_text(msp, "No.", box2_label_x, y, small_font, h)
-    add_dxf_rect(msp, box2_x, y - Y(2.6), box2_w, Y(4.8), h)
-    add_dxf_text(msp, no_text, box2_x + X(2), y, value_font, h)
+    y1 = my + Y(27.0)
+    y2 = my + Y(36.0)
+    y3 = my + Y(47.5)
+    y4 = my + Y(59.5)
+    y5 = my + Y(71.5)
+    y6 = my + Y(83.5)
+    y6b = y6 + Y(5.0)
+    y7 = my + Y(96.5)
+    y8 = my + Y(108.5)
+    y9 = my + Y(120.0)
 
-    # Stromart / Hz
-    y = my + Y(40)
-    add_dxf_multiline(msp, ["Stromart", "Current", "Nature du courant"], label_x, y, small_font, line_gap, h)
-    add_dxf_rect(msp, box1_x, y - Y(2.6), box1_w, Y(4.8), h)
-    add_dxf_text(msp, current_type, box1_x + X(2), y, value_font, h)
+    # Row 1
+    add_dxf_text(msp, "Type", label_x, y1, small_font, h)
+    add_dxf_rect(msp, box1_x, y1 - box_h / 2, box1_w, box_h, h)
+    add_dxf_box_text(msp, type_text, box1_x, y1 - box_h / 2, box1_w, box_h, value_font, h)
 
-    add_dxf_text(msp, "Hz", box2_label_x, y, small_font, h)
-    add_dxf_rect(msp, box2_x, y - Y(2.6), box2_w, Y(4.8), h)
-    add_dxf_text(msp, hz_text, box2_x + box2_w / 2, y, value_font, h, align=TextEntityAlignment.MIDDLE_CENTER)
+    add_dxf_text(msp, "No.", box2_label_x, y1, small_font, h)
+    add_dxf_rect(msp, box2_x, y1 - box_h / 2, box2_w, box_h, h)
+    add_dxf_box_text(msp, no_text, box2_x, y1 - box_h / 2, box2_w, box_h, value_font, h)
 
-    # Working voltage
-    y = my + Y(56)
-    add_dxf_multiline(msp, ["Betriebsspannung", "Working voltage", "Voltage de service"], label_x, y, small_font, line_gap, h)
-    add_dxf_text(msp, "V", unit_x, y, small_font, h)
-    add_dxf_rect(msp, single_box_x, y - Y(2.6), single_box_w, Y(4.8), h)
-    add_dxf_text(msp, working_voltage, single_box_x + single_box_w / 2, y, value_font, h, align=TextEntityAlignment.MIDDLE_CENTER)
+    # Row 2
+    add_dxf_multiline(
+        msp,
+        ["Baujahr / Jahr der Überholung", "Year built / Year refurbished", "Année de fabrication / Année de rénovation"],
+        label_x,
+        y2,
+        small_font,
+        line_gap,
+        h,
+    )
+    add_dxf_rect(msp, year_box1_x, y2 - box_h / 2, year_box_w, box_h, h)
+    add_dxf_box_text(msp, year_built, year_box1_x, y2 - box_h / 2, year_box_w, box_h, value_font, h)
 
-    # Control voltage
-    y = my + Y(72)
-    add_dxf_multiline(msp, ["Steuerspannung", "Controlling voltage", "Voltage de commande"], label_x, y, small_font, line_gap, h)
-    add_dxf_text(msp, "V", unit_x, y, small_font, h)
-    add_dxf_rect(msp, single_box_x, y - Y(2.8), single_box_w, Y(4.6), h)
-    add_dxf_rect(msp, single_box_x, y + Y(2.5), single_box_w, Y(4.6), h)
-    add_dxf_text(msp, f"{control_voltage_dc}  =", single_box_x + X(3), y, value_font, h)
-    add_dxf_text(msp, f"{control_voltage_ac}  ~", single_box_x + X(3), y + Y(5.3), value_font, h)
+    add_dxf_rect(msp, year_box2_x, y2 - box_h / 2, year_box_w, box_h, h)
+    add_dxf_box_text(msp, year_refurbished, year_box2_x, y2 - box_h / 2, year_box_w, box_h, value_font, h)
 
-    # Machine current
-    y = my + Y(87)
-    add_dxf_multiline(msp, ["Maschine Nennstrom", "Nominal current machine", "Machine intensité nominale"], label_x, y, small_font, line_gap, h)
-    add_dxf_text(msp, "A", unit_x, y, small_font, h)
-    add_dxf_rect(msp, single_box_x, y - Y(2.6), single_box_w, Y(4.8), h)
-    add_dxf_text(msp, machine_current, single_box_x + single_box_w / 2, y, value_font, h, align=TextEntityAlignment.MIDDLE_CENTER)
+    # Row 3
+    add_dxf_multiline(msp, ["Stromart", "Current", "Nature du courant"], label_x, y3, small_font, line_gap, h)
+    add_dxf_rect(msp, box1_x, y3 - box_h / 2, box1_w, box_h, h)
+    add_dxf_box_text(msp, current_type, box1_x, y3 - box_h / 2, box1_w, box_h, value_font, h)
 
-    # Fuse current
-    y = my + Y(101)
-    add_dxf_multiline(msp, ["Sicherungs-Nennstrom", "Nominal current fuses", "Intensité de protection nominale"], label_x, y, small_font, line_gap, h)
-    add_dxf_text(msp, "A", unit_x, y, small_font, h)
-    add_dxf_rect(msp, single_box_x, y - Y(2.6), single_box_w, Y(4.8), h)
-    add_dxf_text(msp, fuse_current, single_box_x + single_box_w / 2, y, value_font, h, align=TextEntityAlignment.MIDDLE_CENTER)
+    add_dxf_text(msp, "Hz", box2_label_x, y3, small_font, h)
+    add_dxf_rect(msp, box2_x, y3 - box_h / 2, box2_w, box_h, h)
+    add_dxf_box_text(msp, hz_text, box2_x, y3 - box_h / 2, box2_w, box_h, value_font, h)
 
-    # Schematic
-    y = my + Y(115)
-    add_dxf_multiline(msp, ["Schaltplan", "Schematic", "Schéma de connexions"], label_x, y, small_font, line_gap, h)
-    add_dxf_text(msp, "No.", unit_x - X(6), y, small_font, h)
-    add_dxf_rect(msp, single_box_x - X(12), y - Y(2.6), single_box_w + X(12), Y(4.8), h)
-    add_dxf_text(msp, schematic_no, single_box_x - X(10) + X(2), y, value_font, h)
+    # Row 4
+    add_dxf_multiline(msp, ["Betriebsspannung", "Working voltage", "Voltage de service"], label_x, y4, small_font, line_gap, h)
+    add_dxf_text(msp, "V", unit_x, y4, small_font, h)
+    add_dxf_rect(msp, single_box_x, y4 - box_h / 2, single_box_w, box_h, h)
+    add_dxf_box_text(msp, working_voltage, single_box_x, y4 - box_h / 2, single_box_w, box_h, value_font, h)
 
-    # Bottom empty box
-    add_dxf_rect(msp, mx + X(4), iy + ih - Y(8), main_w - X(6), Y(4.6), h)
+    # Row 5
+    add_dxf_multiline(
+        msp,
+        ["Betriebsdruck Druckluft", "Compressed air pressure", "Pression d'air comprimé"],
+        label_x,
+        y5,
+        small_font,
+        line_gap,
+        h,
+    )
+    add_dxf_text(msp, "bar", unit_x - X(2), y5, small_font, h)
+    add_dxf_rect(msp, single_box_x, y5 - box_h / 2, single_box_w, box_h, h)
+    add_dxf_box_text(msp, air_pressure, single_box_x, y5 - box_h / 2, single_box_w, box_h, value_font, h)
 
-    # Footer number
-    add_dxf_text(msp, footer_no, mr - X(1), iy + ih - Y(0.8), Y(2.0), h, align=TextEntityAlignment.RIGHT)
+    # Row 6
+    add_dxf_multiline(msp, ["Steuerspannung", "Controlling voltage", "Voltage de commande"], label_x, y6, small_font, line_gap, h)
+    add_dxf_text(msp, "V", unit_x, y6, small_font, h)
+    add_dxf_rect(msp, single_box_x, y6 - box_h / 2, single_box_w, box_h, h)
+    add_dxf_box_text(msp, f"{control_voltage_dc} =", single_box_x, y6 - box_h / 2, single_box_w, box_h, value_font, h)
+
+    add_dxf_rect(msp, single_box_x, y6b - box_h / 2, single_box_w, box_h, h)
+    add_dxf_box_text(msp, f"{control_voltage_ac} ~", single_box_x, y6b - box_h / 2, single_box_w, box_h, value_font, h)
+
+    # Row 7
+    add_dxf_multiline(msp, ["Maschine Nennstrom", "Nominal current machine", "Machine intensité nominale"], label_x, y7, small_font, line_gap, h)
+    add_dxf_text(msp, "A", unit_x, y7, small_font, h)
+    add_dxf_rect(msp, single_box_x, y7 - box_h / 2, single_box_w, box_h, h)
+    add_dxf_box_text(msp, machine_current, single_box_x, y7 - box_h / 2, single_box_w, box_h, value_font, h)
+
+    # Row 8
+    add_dxf_multiline(msp, ["Sicherungs-Nennstrom", "Nominal current fuses", "Intensité de protection nominale"], label_x, y8, small_font, line_gap, h)
+    add_dxf_text(msp, "A", unit_x, y8, small_font, h)
+    add_dxf_rect(msp, single_box_x, y8 - box_h / 2, single_box_w, box_h, h)
+    add_dxf_box_text(msp, fuse_current, single_box_x, y8 - box_h / 2, single_box_w, box_h, value_font, h)
+
+    # Row 9
+    add_dxf_multiline(msp, ["Schaltplan", "Schematic", "Schéma de connexions"], label_x, y9, small_font, line_gap, h)
+    add_dxf_text(msp, "No.", unit_x - X(6), y9, small_font, h)
+    schematic_x = single_box_x - X(12)
+    schematic_w = single_box_w + X(12)
+    add_dxf_rect(msp, schematic_x, y9 - box_h / 2, schematic_w, box_h, h)
+    add_dxf_box_text(msp, schematic_no, schematic_x, y9 - box_h / 2, schematic_w, box_h, value_font, h)
+
+    bottom_box_h = Y(3.2)
+    bottom_box_y = iy + ih - Y(7.0)
+    add_dxf_rect(msp, mx + X(4), bottom_box_y, main_w - X(6), bottom_box_h, h)
+
+    add_dxf_text(msp, footer_no, mr - X(1), iy + ih - Y(0.8), Y(1.8), h, align=TextEntityAlignment.RIGHT)
 
     stream = io.StringIO()
     doc.write(stream)
@@ -613,7 +653,4 @@ with right_col:
         use_container_width=True,
     )
 
-    st.info("SVG preview is closest to the original look. DXF export is line/text based for CAD or laser workflow.")
-
-    with st.expander("SVG source"):
-        st.code(svg_content[:12000], language="xml")
+    st.info("Added Baujahr / Year built / Year refurbished row with two boxes in one line.")
