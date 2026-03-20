@@ -1,4 +1,5 @@
 import io
+import math
 
 import ezdxf
 from ezdxf.enums import TextEntityAlignment
@@ -36,13 +37,17 @@ DEFAULTS = {
     "footer_no": "507 598.4",
 }
 
+CE_PATH_1 = "M110,199.498744A100,100 0 0 1 100,200A100,100 0 0 1 100,0A100,100 0 0 1 110,0.501256L110,30.501256A70,70 0 0 0 100,30A70,70 0 0 0 100,170A70,70 0 0 0 110,169.498744Z"
+CE_PATH_2 = "M280,199.498744A100,100 0 0 1 270,200A100,100 0 0 1 270,0A100,100 0 0 1 280,0.501256L280,30.501256A70,70 0 0 0 270,30A70,70 0 0 0 201.620283,85L260,85L260,115L201.620283,115A70,70 0 0 0 270,170A70,70 0 0 0 280,169.498744Z"
+
+
 # -----------------------------------------------------------------------------
 # Sidebar
 # -----------------------------------------------------------------------------
 with st.sidebar:
     st.header("Plate geometry")
     plate_width = st.number_input("Width [mm]", min_value=80.0, max_value=400.0, value=160.0, step=5.0)
-    plate_height = st.number_input("Height [mm]", min_value=95.0, max_value=250.0, value=140.0, step=5.0)
+    plate_height = st.number_input("Height [mm]", min_value=120.0, max_value=260.0, value=150.0, step=5.0)
     corner_radius = st.number_input("Corner radius [mm]", min_value=0.0, max_value=20.0, value=0.0, step=0.5)
     hole_diameter = st.number_input("Mounting hole diameter [mm]", min_value=0.0, max_value=12.0, value=3.5, step=0.5)
     hole_offset = st.number_input("Hole offset from corner [mm]", min_value=2.0, max_value=20.0, value=6.0, step=0.5)
@@ -51,7 +56,11 @@ with st.sidebar:
     st.header("Visibility")
     show_left_holes = st.checkbox("Show left holes", value=True)
     show_right_holes = st.checkbox("Show right holes", value=True)
-    show_warning_symbol = st.checkbox("Show warning symbol", value=True)
+    show_warning_symbol = st.checkbox("Show lightning warning symbol", value=True)
+
+    st.header("Marks / logos")
+    show_ce_logo = st.checkbox("Show CE logo under lightning", value=True)
+    show_weee_logo = st.checkbox("Show WEEE bin (only if applicable)", value=False)
 
 left_col, right_col = st.columns([1.0, 1.25], gap="large")
 
@@ -82,7 +91,8 @@ with left_col:
         footer_no = st.text_input("Small footer number", value=DEFAULTS["footer_no"])
 
 st.title("CE Marking & Rating Plate Designer")
-st.caption("Haulick-style machine plate layout with added Baujahr / Year built / Year refurbished row.")
+st.caption("Haulick-style machine plate with CE logo, optional WEEE mark, and corrected bottom layout.")
+
 
 # -----------------------------------------------------------------------------
 # Helpers
@@ -158,6 +168,81 @@ def draw_svg_multiline(dwg, parent, lines, x, y, size, line_gap, first_bold=True
         draw_svg_text(dwg, parent, line, x, y + idx * line_gap, size, weight=weight)
 
 
+def draw_box_svg(dwg, parent, x, y, w, h, stroke_w=0.28):
+    parent.add(
+        dwg.rect(
+            insert=(x, y),
+            size=(w, h),
+            fill="none",
+            stroke="black",
+            stroke_width=stroke_w,
+        )
+    )
+
+
+def draw_warning_symbol_svg(dwg, parent, x, y, w, h):
+    pts = [
+        (x + 0.42 * w, y + 0.10 * h),
+        (x + 0.67 * w, y + 0.10 * h),
+        (x + 0.52 * w, y + 0.44 * h),
+        (x + 0.80 * w, y + 0.44 * h),
+        (x + 0.43 * w, y + 0.92 * h),
+        (x + 0.51 * w, y + 0.61 * h),
+        (x + 0.25 * w, y + 0.61 * h),
+    ]
+    parent.add(dwg.polygon(points=pts, fill="#c60000", stroke="none"))
+
+
+def draw_ce_logo_svg(dwg, parent, x, y, w, h):
+    scale = min(w / 280.0, h / 200.0)
+    logo_w = 280.0 * scale
+    logo_h = 200.0 * scale
+    tx = x + (w - logo_w) / 2
+    ty = y + (h - logo_h) / 2
+
+    p1 = dwg.path(d=CE_PATH_1, fill="black")
+    p1.update({"transform": f"translate({tx},{ty}) scale({scale})"})
+    parent.add(p1)
+
+    p2 = dwg.path(d=CE_PATH_2, fill="black")
+    p2.update({"transform": f"translate({tx},{ty}) scale({scale})"})
+    parent.add(p2)
+
+
+def draw_weee_logo_svg(dwg, parent, x, y, w, h):
+    stroke = max(min(w, h) * 0.03, 0.25)
+    cx = x + w / 2
+    y_top = y + h * 0.12
+    body_top = y + h * 0.30
+    body_bottom = y + h * 0.78
+    body_w_top = w * 0.34
+    body_w_bottom = w * 0.26
+
+    # lid
+    parent.add(dwg.line((cx - w * 0.18, y_top + h * 0.08), (cx + w * 0.18, y_top + h * 0.08), stroke="black", stroke_width=stroke))
+    parent.add(dwg.line((cx - w * 0.07, y_top), (cx + w * 0.07, y_top), stroke="black", stroke_width=stroke))
+
+    # body
+    p = [
+        (cx - body_w_top / 2, body_top),
+        (cx + body_w_top / 2, body_top),
+        (cx + body_w_bottom / 2, body_bottom),
+        (cx - body_w_bottom / 2, body_bottom),
+    ]
+    parent.add(dwg.polygon(points=p, fill="none", stroke="black", stroke_width=stroke))
+
+    # wheels
+    r = w * 0.035
+    parent.add(dwg.circle(center=(cx - w * 0.09, body_bottom + h * 0.05), r=r, fill="none", stroke="black", stroke_width=stroke))
+    parent.add(dwg.circle(center=(cx + w * 0.09, body_bottom + h * 0.05), r=r, fill="none", stroke="black", stroke_width=stroke))
+
+    # crossed lines
+    parent.add(dwg.line((x + w * 0.18, y + h * 0.12), (x + w * 0.84, y + h * 0.92), stroke="black", stroke_width=stroke))
+    parent.add(dwg.line((x + w * 0.84, y + h * 0.12), (x + w * 0.18, y + h * 0.92), stroke="black", stroke_width=stroke))
+
+
+# DXF helpers ---------------------------------------------------------------
+
 def dy(plate_h: float, y_top: float) -> float:
     return plate_h - y_top
 
@@ -195,53 +280,138 @@ def add_dxf_multiline(msp, lines, x, y, height, line_gap, plate_h):
         add_dxf_text(msp, line, x, y + idx * line_gap, height, plate_h)
 
 
-def draw_warning_symbol_svg(dwg, parent, x, y, w, h):
-    pts = [
-        (x + 0.42 * w, y + 0.18 * h),
-        (x + 0.67 * w, y + 0.18 * h),
-        (x + 0.53 * w, y + 0.50 * h),
-        (x + 0.80 * w, y + 0.50 * h),
-        (x + 0.44 * w, y + 0.88 * h),
-        (x + 0.52 * w, y + 0.62 * h),
-        (x + 0.27 * w, y + 0.62 * h),
-    ]
-    parent.add(dwg.polygon(points=pts, fill="#c60000", stroke="none"))
+def add_dxf_line(msp, x1, y1, x2, y2, plate_h):
+    msp.add_line((x1, dy(plate_h, y1)), (x2, dy(plate_h, y2)))
+
+
+def add_dxf_polyline(msp, pts, plate_h, close=False):
+    dxf_pts = [(x, dy(plate_h, y)) for x, y in pts]
+    msp.add_lwpolyline(dxf_pts, close=close)
+
+
+def sample_arc_points_screen(cx, cy, r, start_deg, end_deg, steps=36, clockwise=False):
+    if clockwise:
+        if start_deg < end_deg:
+            start_deg += 360.0
+        angles = [start_deg - i * (start_deg - end_deg) / steps for i in range(steps + 1)]
+    else:
+        if end_deg < start_deg:
+            end_deg += 360.0
+        angles = [start_deg + i * (end_deg - start_deg) / steps for i in range(steps + 1)]
+
+    pts = []
+    for a in angles:
+        rad = math.radians(a)
+        pts.append((cx + r * math.cos(rad), cy + r * math.sin(rad)))
+    return pts
 
 
 def draw_warning_symbol_dxf(msp, x, y, w, h, plate_h):
     pts = [
-        (x + 0.42 * w, y + 0.18 * h),
-        (x + 0.67 * w, y + 0.18 * h),
-        (x + 0.53 * w, y + 0.50 * h),
-        (x + 0.80 * w, y + 0.50 * h),
-        (x + 0.44 * w, y + 0.88 * h),
-        (x + 0.52 * w, y + 0.62 * h),
-        (x + 0.27 * w, y + 0.62 * h),
+        (x + 0.42 * w, y + 0.10 * h),
+        (x + 0.67 * w, y + 0.10 * h),
+        (x + 0.52 * w, y + 0.44 * h),
+        (x + 0.80 * w, y + 0.44 * h),
+        (x + 0.43 * w, y + 0.92 * h),
+        (x + 0.51 * w, y + 0.61 * h),
+        (x + 0.25 * w, y + 0.61 * h),
     ]
-    pts_dxf = [(px, dy(plate_h, py)) for px, py in pts]
-    msp.add_lwpolyline(pts_dxf, close=True)
+    add_dxf_polyline(msp, pts, plate_h, close=True)
 
 
-def draw_box_svg(dwg, parent, x, y, w, h, stroke_w=0.28):
-    parent.add(
-        dwg.rect(
-            insert=(x, y),
-            size=(w, h),
-            fill="none",
-            stroke="black",
-            stroke_width=stroke_w,
-        )
+def draw_ce_logo_dxf(msp, x, y, w, h, plate_h):
+    scale = min(w / 280.0, h / 200.0)
+    logo_w = 280.0 * scale
+    logo_h = 200.0 * scale
+    tx = x + (w - logo_w) / 2
+    ty = y + (h - logo_h) / 2
+
+    # C
+    c_cx = tx + 100 * scale
+    c_cy = ty + 100 * scale
+    add_dxf_polyline(
+        msp,
+        sample_arc_points_screen(c_cx, c_cy, 100 * scale, 84.2608, 275.7392, steps=44, clockwise=False),
+        plate_h,
+        close=False,
+    )
+    add_dxf_polyline(
+        msp,
+        sample_arc_points_screen(c_cx, c_cy, 70 * scale, 278.1986, 81.8014, steps=40, clockwise=True),
+        plate_h,
+        close=False,
+    )
+    add_dxf_line(msp, tx + 110 * scale, ty + 0.501256 * scale, tx + 110 * scale, ty + 30.501256 * scale, plate_h)
+    add_dxf_line(msp, tx + 110 * scale, ty + 199.498744 * scale, tx + 110 * scale, ty + 169.498744 * scale, plate_h)
+
+    # E outer
+    e_cx = tx + 270 * scale
+    e_cy = ty + 100 * scale
+    add_dxf_polyline(
+        msp,
+        sample_arc_points_screen(e_cx, e_cy, 100 * scale, 278.1986, 81.8014, steps=44, clockwise=False),
+        plate_h,
+        close=False,
+    )
+    add_dxf_line(msp, tx + 280 * scale, ty + 0.501256 * scale, tx + 280 * scale, ty + 30.501256 * scale, plate_h)
+    add_dxf_line(msp, tx + 280 * scale, ty + 169.498744 * scale, tx + 280 * scale, ty + 199.498744 * scale, plate_h)
+
+    # E inner upper curve
+    add_dxf_polyline(
+        msp,
+        sample_arc_points_screen(e_cx, e_cy, 70 * scale, 278.1986, 192.3650, steps=24, clockwise=True),
+        plate_h,
+        close=False,
+    )
+    # middle bar
+    add_dxf_line(msp, tx + 201.620283 * scale, ty + 85 * scale, tx + 260 * scale, ty + 85 * scale, plate_h)
+    add_dxf_line(msp, tx + 260 * scale, ty + 85 * scale, tx + 260 * scale, ty + 115 * scale, plate_h)
+    add_dxf_line(msp, tx + 260 * scale, ty + 115 * scale, tx + 201.620283 * scale, ty + 115 * scale, plate_h)
+
+    # E inner lower curve
+    add_dxf_polyline(
+        msp,
+        sample_arc_points_screen(e_cx, e_cy, 70 * scale, 167.6350, 81.8014, steps=24, clockwise=True),
+        plate_h,
+        close=False,
     )
 
+
+def draw_weee_logo_dxf(msp, x, y, w, h, plate_h):
+    cx = x + w / 2
+    y_top = y + h * 0.12
+    body_top = y + h * 0.30
+    body_bottom = y + h * 0.78
+    body_w_top = w * 0.34
+    body_w_bottom = w * 0.26
+
+    # lid
+    add_dxf_line(msp, cx - w * 0.18, y_top + h * 0.08, cx + w * 0.18, y_top + h * 0.08, plate_h)
+    add_dxf_line(msp, cx - w * 0.07, y_top, cx + w * 0.07, y_top, plate_h)
+
+    # body
+    p = [
+        (cx - body_w_top / 2, body_top),
+        (cx + body_w_top / 2, body_top),
+        (cx + body_w_bottom / 2, body_bottom),
+        (cx - body_w_bottom / 2, body_bottom),
+    ]
+    add_dxf_polyline(msp, p, plate_h, close=True)
+
+    # crossed lines
+    add_dxf_line(msp, x + w * 0.18, y + h * 0.12, x + w * 0.84, y + h * 0.92, plate_h)
+    add_dxf_line(msp, x + w * 0.84, y + h * 0.12, x + w * 0.18, y + h * 0.92, plate_h)
+
+
 # -----------------------------------------------------------------------------
-# SVG
+# SVG generation
 # -----------------------------------------------------------------------------
 def generate_plate_svg(w: float, h: float) -> str:
     dwg = svgwrite.Drawing(size=(f"{w}mm", f"{h}mm"), viewBox=f"0 0 {w} {h}")
     dwg.attribs["style"] = "background:white"
 
     template_w = 160.0
-    template_h = 140.0
+    template_h = 150.0
 
     sx = w / template_w
     sy = h / template_h
@@ -291,28 +461,45 @@ def generate_plate_svg(w: float, h: float) -> str:
     iw = w - 2 * border_offset
     ih = h - 2 * border_offset
 
+    # Left symbol panel
     panel_w = X(44)
-    content.add(
-        dwg.line(
-            start=(ix + panel_w, iy),
-            end=(ix + panel_w, iy + ih),
-            stroke="black",
-            stroke_width=0.35,
-        )
-    )
+    content.add(dwg.line(start=(ix + panel_w, iy), end=(ix + panel_w, iy + ih), stroke="black", stroke_width=0.35))
+
+    pad = X(4.5)
+    zone_x = ix + pad
+    zone_y = iy + Y(6)
+    zone_w = panel_w - 2 * pad
+    zone_h = ih - Y(12)
+
+    if show_ce_logo or show_weee_logo:
+        lightning_h = zone_h * 0.56
+    else:
+        lightning_h = zone_h * 0.78
 
     if show_warning_symbol:
-        draw_warning_symbol_svg(dwg, content, ix + X(3), iy + Y(14), panel_w - X(6), ih - Y(24))
+        draw_warning_symbol_svg(dwg, content, zone_x, zone_y, zone_w, lightning_h)
 
+    logo_y = zone_y + lightning_h + Y(3)
+
+    if show_ce_logo:
+        ce_h = Y(12)
+        draw_ce_logo_svg(dwg, content, zone_x + zone_w * 0.06, logo_y, zone_w * 0.88, ce_h)
+        logo_y += ce_h + Y(3)
+
+    if show_weee_logo:
+        weee_h = Y(12)
+        draw_weee_logo_svg(dwg, content, zone_x + zone_w * 0.18, logo_y, zone_w * 0.64, weee_h)
+
+    # Main area
     mx = ix + panel_w + X(4)
-    my = iy + Y(3)
+    my = iy + Y(2.5)
     mr = ix + iw - X(4)
     main_w = mr - mx
 
     cx = mx + main_w / 2
-    draw_svg_text(dwg, content, company_name, cx, my + Y(7), Y(7.5), weight="bold", anchor="middle")
-    draw_svg_text(dwg, content, company_line2, cx, my + Y(13.0), Y(3.7), anchor="middle")
-    draw_svg_text(dwg, content, company_line3, cx, my + Y(18.4), Y(3.7), anchor="middle")
+    draw_svg_text(dwg, content, company_name, cx, my + Y(7), Y(7.0), weight="bold", anchor="middle")
+    draw_svg_text(dwg, content, company_line2, cx, my + Y(12.4), Y(3.5), anchor="middle")
+    draw_svg_text(dwg, content, company_line3, cx, my + Y(17.6), Y(3.5), anchor="middle")
 
     label_x = mx + X(0)
     box1_x = mx + X(22)
@@ -325,27 +512,26 @@ def generate_plate_svg(w: float, h: float) -> str:
     single_box_x = mx + X(73)
     single_box_w = X(28)
 
-    # For year row: 2 small boxes in one line
     year_box1_x = mx + X(73)
     year_box_w = X(12.5)
     year_gap = X(3.0)
     year_box2_x = year_box1_x + year_box_w + year_gap
 
-    small_font = Y(2.6)
-    value_font = Y(3.15)
-    line_gap = Y(2.45)
-    box_h = Y(4.6)
+    small_font = Y(2.45)
+    value_font = Y(2.95)
+    line_gap = Y(2.30)
+    box_h = Y(4.4)
 
-    y1 = my + Y(27.0)   # Type / No.
-    y2 = my + Y(36.0)   # Year built / refurbished
-    y3 = my + Y(47.5)   # Current / Hz
-    y4 = my + Y(59.5)   # Voltage
-    y5 = my + Y(71.5)   # Air pressure
-    y6 = my + Y(83.5)   # Control voltage
+    y1 = my + Y(27.0)
+    y2 = my + Y(35.5)
+    y3 = my + Y(46.5)
+    y4 = my + Y(58.0)
+    y5 = my + Y(69.5)
+    y6 = my + Y(81.0)
     y6b = y6 + Y(5.0)
-    y7 = my + Y(96.5)   # Machine current
-    y8 = my + Y(108.5)  # Fuse current
-    y9 = my + Y(120.0)  # Schematic
+    y7 = my + Y(95.0)
+    y8 = my + Y(106.5)
+    y9 = my + Y(118.0)
 
     # Row 1
     draw_svg_text(dwg, content, "Type", label_x, y1, small_font, weight="bold")
@@ -356,7 +542,7 @@ def generate_plate_svg(w: float, h: float) -> str:
     draw_box_svg(dwg, content, box2_x, y1 - box_h / 2, box2_w, box_h)
     draw_svg_box_text(dwg, content, no_text, box2_x, y1 - box_h / 2, box2_w, box_h, value_font)
 
-    # Row 2 - Baujahr / leto izdelave + leto obnove
+    # Row 2
     draw_svg_multiline(
         dwg,
         content,
@@ -430,16 +616,19 @@ def generate_plate_svg(w: float, h: float) -> str:
     draw_box_svg(dwg, content, schematic_x, y9 - box_h / 2, schematic_w, box_h)
     draw_svg_box_text(dwg, content, schematic_no, schematic_x, y9 - box_h / 2, schematic_w, box_h, value_font)
 
-    bottom_box_h = Y(3.2)
-    bottom_box_y = iy + ih - Y(7.0)
+    # Bottom box - corrected spacing
+    bottom_box_h = Y(3.4)
+    bottom_box_y = iy + ih - Y(7.6)
     draw_box_svg(dwg, content, mx + X(4), bottom_box_y, main_w - X(6), bottom_box_h)
 
-    draw_svg_text(dwg, content, footer_no, mr - X(1), iy + ih - Y(0.8), Y(1.9), anchor="end")
+    # Footer
+    draw_svg_text(dwg, content, footer_no, mr - X(1), iy + ih - Y(0.9), Y(1.8), anchor="end")
 
     return dwg.tostring()
 
+
 # -----------------------------------------------------------------------------
-# DXF
+# DXF generation
 # -----------------------------------------------------------------------------
 def generate_plate_dxf(w: float, h: float) -> bytes:
     doc = ezdxf.new("R2010", setup=True)
@@ -447,7 +636,7 @@ def generate_plate_dxf(w: float, h: float) -> bytes:
     msp = doc.modelspace()
 
     template_w = 160.0
-    template_h = 140.0
+    template_h = 150.0
 
     sx = w / template_w
     sy = h / template_h
@@ -473,21 +662,45 @@ def generate_plate_dxf(w: float, h: float) -> bytes:
     iw = w - 2 * border_offset
     ih = h - 2 * border_offset
 
+    # Left symbol panel
     panel_w = X(44)
-    msp.add_line((ix + panel_w, dy(h, iy)), (ix + panel_w, dy(h, iy + ih)))
+    add_dxf_line(msp, ix + panel_w, iy, ix + panel_w, iy + ih, h)
+
+    pad = X(4.5)
+    zone_x = ix + pad
+    zone_y = iy + Y(6)
+    zone_w = panel_w - 2 * pad
+    zone_h = ih - Y(12)
+
+    if show_ce_logo or show_weee_logo:
+        lightning_h = zone_h * 0.56
+    else:
+        lightning_h = zone_h * 0.78
 
     if show_warning_symbol:
-        draw_warning_symbol_dxf(msp, ix + X(3), iy + Y(14), panel_w - X(6), ih - Y(24), h)
+        draw_warning_symbol_dxf(msp, zone_x, zone_y, zone_w, lightning_h, h)
 
+    logo_y = zone_y + lightning_h + Y(3)
+
+    if show_ce_logo:
+        ce_h = Y(12)
+        draw_ce_logo_dxf(msp, zone_x + zone_w * 0.06, logo_y, zone_w * 0.88, ce_h, h)
+        logo_y += ce_h + Y(3)
+
+    if show_weee_logo:
+        weee_h = Y(12)
+        draw_weee_logo_dxf(msp, zone_x + zone_w * 0.18, logo_y, zone_w * 0.64, weee_h, h)
+
+    # Main area
     mx = ix + panel_w + X(4)
-    my = iy + Y(3)
+    my = iy + Y(2.5)
     mr = ix + iw - X(4)
     main_w = mr - mx
 
     cx = mx + main_w / 2
-    add_dxf_text(msp, company_name, cx, my + Y(7), Y(5.8), h, align=TextEntityAlignment.MIDDLE_CENTER)
-    add_dxf_text(msp, company_line2, cx, my + Y(13.0), Y(2.8), h, align=TextEntityAlignment.MIDDLE_CENTER)
-    add_dxf_text(msp, company_line3, cx, my + Y(18.4), Y(2.8), h, align=TextEntityAlignment.MIDDLE_CENTER)
+    add_dxf_text(msp, company_name, cx, my + Y(7), Y(5.6), h, align=TextEntityAlignment.MIDDLE_CENTER)
+    add_dxf_text(msp, company_line2, cx, my + Y(12.4), Y(2.7), h, align=TextEntityAlignment.MIDDLE_CENTER)
+    add_dxf_text(msp, company_line3, cx, my + Y(17.6), Y(2.7), h, align=TextEntityAlignment.MIDDLE_CENTER)
 
     label_x = mx + X(0)
     box1_x = mx + X(22)
@@ -505,21 +718,21 @@ def generate_plate_dxf(w: float, h: float) -> bytes:
     year_gap = X(3.0)
     year_box2_x = year_box1_x + year_box_w + year_gap
 
-    small_font = Y(2.2)
-    value_font = Y(2.55)
-    line_gap = Y(2.45)
-    box_h = Y(4.6)
+    small_font = Y(2.10)
+    value_font = Y(2.50)
+    line_gap = Y(2.30)
+    box_h = Y(4.4)
 
     y1 = my + Y(27.0)
-    y2 = my + Y(36.0)
-    y3 = my + Y(47.5)
-    y4 = my + Y(59.5)
-    y5 = my + Y(71.5)
-    y6 = my + Y(83.5)
+    y2 = my + Y(35.5)
+    y3 = my + Y(46.5)
+    y4 = my + Y(58.0)
+    y5 = my + Y(69.5)
+    y6 = my + Y(81.0)
     y6b = y6 + Y(5.0)
-    y7 = my + Y(96.5)
-    y8 = my + Y(108.5)
-    y9 = my + Y(120.0)
+    y7 = my + Y(95.0)
+    y8 = my + Y(106.5)
+    y9 = my + Y(118.0)
 
     # Row 1
     add_dxf_text(msp, "Type", label_x, y1, small_font, h)
@@ -604,11 +817,12 @@ def generate_plate_dxf(w: float, h: float) -> bytes:
     add_dxf_rect(msp, schematic_x, y9 - box_h / 2, schematic_w, box_h, h)
     add_dxf_box_text(msp, schematic_no, schematic_x, y9 - box_h / 2, schematic_w, box_h, value_font, h)
 
-    bottom_box_h = Y(3.2)
-    bottom_box_y = iy + ih - Y(7.0)
+    # Bottom box - corrected spacing
+    bottom_box_h = Y(3.4)
+    bottom_box_y = iy + ih - Y(7.6)
     add_dxf_rect(msp, mx + X(4), bottom_box_y, main_w - X(6), bottom_box_h, h)
 
-    add_dxf_text(msp, footer_no, mr - X(1), iy + ih - Y(0.8), Y(1.8), h, align=TextEntityAlignment.RIGHT)
+    add_dxf_text(msp, footer_no, mr - X(1), iy + ih - Y(0.9), Y(1.6), h, align=TextEntityAlignment.RIGHT)
 
     stream = io.StringIO()
     doc.write(stream)
@@ -653,4 +867,6 @@ with right_col:
         use_container_width=True,
     )
 
-    st.info("Added Baujahr / Year built / Year refurbished row with two boxes in one line.")
+    st.info(
+        "CE logo is enabled by default. WEEE is optional and should only be used if the finished product is actually in WEEE scope."
+    )
