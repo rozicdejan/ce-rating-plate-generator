@@ -8,20 +8,16 @@ import streamlit as st
 import streamlit.components.v1 as components
 import svgwrite
 
-
 st.set_page_config(
     page_title="CE Rating Plate Designer",
     page_icon="🏷️",
     layout="wide",
 )
 
-# -----------------------------------------------------------------------------
-# Defaults
-# -----------------------------------------------------------------------------
 DEFAULTS = {
     "company_name": "DAFRA d.o.o.",
     "company_line2": "Cesta ob železnici 3",
-    "company_line3": "3310 Žalec, Slovenia",
+    "company_line3": "3310 Žalec, Slovenija",
     "type_text": "RVD-32-720HS",
     "no_text": "1330117",
     "year_built": "2026",
@@ -38,288 +34,156 @@ DEFAULTS = {
     "footer_no": "507 598.4",
 }
 
-# Official CE logo paths
+LANGUAGE_PACKS = {
+    "SI / EN / DE": {
+        "type_short": "Tip",
+        "no_short": "Št.",
+        "year_label": ["Leto izdelave / Leto obnove", "Year built / Year refurbished", "Baujahr / Jahr der Überholung"],
+        "current_label": ["Vrsta toka", "Current", "Stromart"],
+        "working_voltage_label": ["Delovna napetost", "Working voltage", "Betriebsspannung"],
+        "air_pressure_label": ["Delovni tlak zraka", "Compressed air pressure", "Betriebsdruck Druckluft"],
+        "control_voltage_label": ["Krmilna napetost", "Control voltage", "Steuerspannung"],
+        "machine_current_label": ["Nazivni tok stroja", "Nominal current machine", "Maschine Nennstrom"],
+        "fuse_current_label": ["Nazivni tok varovalk", "Nominal current fuses", "Sicherungs-Nennstrom"],
+        "schematic_label": ["Shema vezave", "Schematic", "Schaltplan"],
+    },
+    "DE / EN / FR": {
+        "type_short": "Typ",
+        "no_short": "Nr.",
+        "year_label": ["Baujahr / Jahr der Überholung", "Year built / Year refurbished", "Année de fabrication / Année de rénovation"],
+        "current_label": ["Stromart", "Current", "Nature du courant"],
+        "working_voltage_label": ["Betriebsspannung", "Working voltage", "Voltage de service"],
+        "air_pressure_label": ["Betriebsdruck Druckluft", "Compressed air pressure", "Pression d'air comprimé"],
+        "control_voltage_label": ["Steuerspannung", "Control voltage", "Voltage de commande"],
+        "machine_current_label": ["Maschine Nennstrom", "Nominal current machine", "Machine intensité nominale"],
+        "fuse_current_label": ["Sicherungs-Nennstrom", "Nominal current fuses", "Intensité de protection nominale"],
+        "schematic_label": ["Schaltplan", "Schematic", "Schéma de connexions"],
+    },
+    "EN / DE / SI": {
+        "type_short": "Type",
+        "no_short": "No.",
+        "year_label": ["Year built / Year refurbished", "Baujahr / Jahr der Überholung", "Leto izdelave / Leto obnove"],
+        "current_label": ["Current", "Stromart", "Vrsta toka"],
+        "working_voltage_label": ["Working voltage", "Betriebsspannung", "Delovna napetost"],
+        "air_pressure_label": ["Compressed air pressure", "Betriebsdruck Druckluft", "Delovni tlak zraka"],
+        "control_voltage_label": ["Control voltage", "Steuerspannung", "Krmilna napetost"],
+        "machine_current_label": ["Nominal current machine", "Maschine Nennstrom", "Nazivni tok stroja"],
+        "fuse_current_label": ["Nominal current fuses", "Sicherungs-Nennstrom", "Nazivni tok varovalk"],
+        "schematic_label": ["Schematic", "Schaltplan", "Shema vezave"],
+    },
+    "SI / EN": {
+        "type_short": "Tip",
+        "no_short": "Št.",
+        "year_label": ["Leto izdelave / Leto obnove", "Year built / Year refurbished"],
+        "current_label": ["Vrsta toka", "Current"],
+        "working_voltage_label": ["Delovna napetost", "Working voltage"],
+        "air_pressure_label": ["Delovni tlak zraka", "Compressed air pressure"],
+        "control_voltage_label": ["Krmilna napetost", "Control voltage"],
+        "machine_current_label": ["Nazivni tok stroja", "Nominal current machine"],
+        "fuse_current_label": ["Nazivni tok varovalk", "Nominal current fuses"],
+        "schematic_label": ["Shema vezave", "Schematic"],
+    },
+}
+
 CE_PATH_1 = "M110,199.498744A100,100 0 0 1 100,200A100,100 0 0 1 100,0A100,100 0 0 1 110,0.501256L110,30.501256A70,70 0 0 0 100,30A70,70 0 0 0 100,170A70,70 0 0 0 110,169.498744Z"
 CE_PATH_2 = "M280,199.498744A100,100 0 0 1 270,200A100,100 0 0 1 270,0A100,100 0 0 1 280,0.501256L280,30.501256A70,70 0 0 0 270,30A70,70 0 0 0 201.620283,85L260,85L260,115L201.620283,115A70,70 0 0 0 270,170A70,70 0 0 0 280,169.498744Z"
 
+TEMPLATE_W = 160.0
+TEMPLATE_H = 150.0
+GUIDE_COLOR = "#2563eb"
 
-# -----------------------------------------------------------------------------
-# Sidebar
-# -----------------------------------------------------------------------------
+
 with st.sidebar:
-    st.header("Plate geometry")
-    plate_width = st.number_input("Width [mm]", min_value=80.0, max_value=400.0, value=160.0, step=5.0)
-    plate_height = st.number_input("Height [mm]", min_value=120.0, max_value=260.0, value=150.0, step=5.0)
-    corner_radius = st.number_input("Corner radius [mm]", min_value=0.0, max_value=20.0, value=0.0, step=0.5)
-    hole_diameter = st.number_input("Mounting hole diameter [mm]", min_value=0.0, max_value=12.0, value=3.5, step=0.5)
-    hole_offset = st.number_input("Hole offset from corner [mm]", min_value=2.0, max_value=20.0, value=6.0, step=0.5)
-    border_offset = st.number_input("Inner border offset [mm]", min_value=1.0, max_value=15.0, value=4.0, step=0.5)
+    st.header("Geometrija tablice")
+    plate_width = st.number_input("Širina [mm]", min_value=80.0, max_value=400.0, value=160.0, step=5.0)
+    plate_height = st.number_input("Višina [mm]", min_value=120.0, max_value=260.0, value=150.0, step=5.0)
+    corner_radius = st.number_input("Radij vogala [mm]", min_value=0.0, max_value=20.0, value=0.0, step=0.5)
+    hole_diameter = st.number_input("Premer montažne luknje [mm]", min_value=0.0, max_value=12.0, value=3.5, step=0.5)
+    hole_offset = st.number_input("Odmik lukenj od roba [mm]", min_value=2.0, max_value=20.0, value=6.0, step=0.5)
+    border_offset = st.number_input("Odmik notranjega roba [mm]", min_value=1.0, max_value=15.0, value=4.0, step=0.5)
 
-    st.header("Visibility")
-    show_left_holes = st.checkbox("Show left holes", value=True)
-    show_right_holes = st.checkbox("Show right holes", value=True)
-    show_warning_symbol = st.checkbox("Show lightning warning symbol", value=True)
+    st.header("Prikaz")
+    show_left_holes = st.checkbox("Pokaži leve luknje", value=True)
+    show_right_holes = st.checkbox("Pokaži desne luknje", value=True)
+    show_warning_symbol = st.checkbox("Pokaži opozorilno strelo", value=True)
+    show_dimensions = st.checkbox("Pokaži mere v predogledu", value=False)
+    include_guides_in_dxf = st.checkbox("Vključi GUIDE layer v DXF", value=False)
 
-    st.header("Marks / logos")
-    show_ce_logo = st.checkbox("Show CE logo under lightning", value=True)
-    show_bin_logo = st.checkbox("Show WEEE bin (crossed)", value=False)
+    st.header("Oznake / logotipi")
+    show_ce_logo = st.checkbox("Pokaži CE logotip pod strelo", value=True)
+    show_bin_logo = st.checkbox("Pokaži WEEE koš (prekrižan)", value=False)
+
+    st.header("Jezikovni paket")
+    language_pack_name = st.selectbox(
+        "Izberi paket",
+        list(LANGUAGE_PACKS.keys()),
+        index=0,
+        help="Privzeto: SI / EN / DE",
+    )
+
+labels = LANGUAGE_PACKS[language_pack_name]
 
 left_col, right_col = st.columns([1.0, 1.25], gap="large")
 
 with left_col:
-    st.subheader("Top text")
-    company_name = st.text_input("Company", value=DEFAULTS["company_name"])
-    company_line2 = st.text_input("Address line 1", value=DEFAULTS["company_line2"])
-    company_line3 = st.text_input("Address line 2", value=DEFAULTS["company_line3"])
+    st.subheader("Glavni podatki")
+    company_name = st.text_input("Podjetje", value=DEFAULTS["company_name"])
+    company_line2 = st.text_input("Naslov 1", value=DEFAULTS["company_line2"])
+    company_line3 = st.text_input("Naslov 2", value=DEFAULTS["company_line3"])
 
-    st.subheader("Plate values")
+    st.subheader("Vrednosti na tablici")
     c1, c2 = st.columns(2)
     with c1:
-        type_text = st.text_input("Type", value=DEFAULTS["type_text"])
+        type_text = st.text_input("Tip", value=DEFAULTS["type_text"])
         year_built = st.text_input("Leto izdelave", value=DEFAULTS["year_built"])
-        current_type = st.text_input("Current / nature du courant", value=DEFAULTS["current_type"])
-        working_voltage = st.text_input("Working voltage [V]", value=DEFAULTS["working_voltage"])
-        air_pressure = st.text_input("Compressed air / working pressure [bar]", value=DEFAULTS["air_pressure"])
-        control_voltage_dc = st.text_input("Controlling voltage DC [V]", value=DEFAULTS["control_voltage_dc"])
-        machine_current = st.text_input("Machine nominal current [A]", value=DEFAULTS["machine_current"])
+        current_type = st.text_input("Vrsta toka", value=DEFAULTS["current_type"])
+        working_voltage = st.text_input("Delovna napetost [V]", value=DEFAULTS["working_voltage"])
+        air_pressure = st.text_input("Delovni tlak zraka [bar]", value=DEFAULTS["air_pressure"])
+        control_voltage_dc = st.text_input("Krmilna napetost DC [V]", value=DEFAULTS["control_voltage_dc"])
+        machine_current = st.text_input("Nazivni tok stroja [A]", value=DEFAULTS["machine_current"])
 
     with c2:
-        no_text = st.text_input("No.", value=DEFAULTS["no_text"])
+        no_text = st.text_input("Št.", value=DEFAULTS["no_text"])
         year_refurbished = st.text_input("Leto obnove", value=DEFAULTS["year_refurbished"])
-        hz_text = st.text_input("Hz", value=DEFAULTS["hz_text"])
-        control_voltage_ac = st.text_input("Controlling voltage AC [V]", value=DEFAULTS["control_voltage_ac"])
-        fuse_current = st.text_input("Fuse nominal current [A]", value=DEFAULTS["fuse_current"])
-        schematic_no = st.text_input("Schematic No.", value=DEFAULTS["schematic_no"])
-        footer_no = st.text_input("Small footer number", value=DEFAULTS["footer_no"])
+        hz_text = st.text_input("Frekvenca [Hz]", value=DEFAULTS["hz_text"])
+        control_voltage_ac = st.text_input("Krmilna napetost AC [V]", value=DEFAULTS["control_voltage_ac"])
+        fuse_current = st.text_input("Nazivni tok varovalk [A]", value=DEFAULTS["fuse_current"])
+        schematic_no = st.text_input("Številka sheme", value=DEFAULTS["schematic_no"])
+        footer_no = st.text_input("Mala številka spodaj", value=DEFAULTS["footer_no"])
 
-st.title("CE Marking & Rating Plate Designer")
-st.caption("Haulick-style machine plate with corrected CE logo, crossed WEEE bin, and SVG/DXF export.")
+st.title("CE / Rating Plate Designer")
+st.caption("Jezik aplikacije je slovenski. Privzeti paket za napis na tablici je SI / EN / DE.")
 
 
-# -----------------------------------------------------------------------------
-# Helpers
-# -----------------------------------------------------------------------------
 def clamp_text(value) -> str:
     if value is None:
         return ""
     return str(value)
 
 
-def draw_svg_text(
-    dwg,
-    parent,
-    text,
-    x,
-    y,
-    size,
-    weight="normal",
-    anchor="start",
-    rotate=None,
-    family="Arial, Helvetica, sans-serif",
-):
+def fit_font_size(text: str, base_size: float, max_width: float, padding: float = 1.2, min_ratio: float = 0.68) -> float:
     text = clamp_text(text)
     if not text:
-        return
-    el = dwg.text(
-        text,
-        insert=(x, y),
-        font_size=size,
-        font_family=family,
-        font_weight=weight,
-        text_anchor=anchor,
-        fill="black",
-    )
-    if rotate is not None:
-        el.rotate(rotate, center=(x, y))
-    parent.add(el)
+        return base_size
+    usable = max(max_width - 2 * padding, 1.0)
+    est = len(text) * base_size * 0.56
+    if est <= usable:
+        return base_size
+    scaled = base_size * usable / est
+    return max(base_size * min_ratio, scaled)
 
 
-def draw_svg_box_text(
-    dwg,
-    parent,
-    text,
-    x,
-    y,
-    w,
-    h,
-    size,
-    weight="normal",
-    family="Arial, Helvetica, sans-serif",
-):
-    text = clamp_text(text)
-    if not text:
-        return
-    el = dwg.text(
-        text,
-        insert=(x + w / 2, y + h / 2),
-        font_size=size,
-        font_family=family,
-        font_weight=weight,
-        text_anchor="middle",
-        fill="black",
-    )
-    el["dominant-baseline"] = "middle"
-    parent.add(el)
-
-
-def draw_svg_multiline(dwg, parent, lines, x, y, size, line_gap, first_bold=True):
-    for idx, line in enumerate(lines):
-        if not line:
-            continue
-        weight = "bold" if (idx == 0 and first_bold) else "normal"
-        draw_svg_text(dwg, parent, line, x, y + idx * line_gap, size, weight=weight)
-
-
-def draw_box_svg(dwg, parent, x, y, w, h, stroke_w=0.28):
-    parent.add(
-        dwg.rect(
-            insert=(x, y),
-            size=(w, h),
-            fill="none",
-            stroke="black",
-            stroke_width=stroke_w,
-        )
-    )
-
-
-def draw_warning_symbol_svg(dwg, parent, x, y, w, h):
-    pts = [
-        (x + 0.42 * w, y + 0.10 * h),
-        (x + 0.67 * w, y + 0.10 * h),
-        (x + 0.52 * w, y + 0.44 * h),
-        (x + 0.80 * w, y + 0.44 * h),
-        (x + 0.43 * w, y + 0.92 * h),
-        (x + 0.51 * w, y + 0.61 * h),
-        (x + 0.25 * w, y + 0.61 * h),
-    ]
-    parent.add(dwg.polygon(points=pts, fill="#c60000", stroke="none"))
-
-
-def draw_ce_logo_svg(dwg, parent, x, y, w, h):
-    scale = min(w / 280.0, h / 200.0)
-    logo_w = 280.0 * scale
-    logo_h = 200.0 * scale
-    tx = x + (w - logo_w) / 2
-    ty = y + (h - logo_h) / 2
-
-    grp = dwg.g()
-    grp["style"] = "fill-rule:evenodd;clip-rule:evenodd"
-
-    p1 = dwg.path(d=CE_PATH_1, fill="black")
-    p1["fill-rule"] = "evenodd"
-    p1["clip-rule"] = "evenodd"
-    p1.update({"transform": f"translate({tx},{ty}) scale({scale})"})
-    grp.add(p1)
-
-    p2 = dwg.path(d=CE_PATH_2, fill="black")
-    p2["fill-rule"] = "evenodd"
-    p2["clip-rule"] = "evenodd"
-    p2.update({"transform": f"translate({tx},{ty}) scale({scale})"})
-    grp.add(p2)
-
-    parent.add(grp)
-
-
-def draw_bin_logo_svg(dwg, parent, x, y, w, h):
-    target_ratio = 0.62  # width / height
-    if w / h > target_ratio:
-        bh = h
-        bw = h * target_ratio
-    else:
-        bw = w
-        bh = w / target_ratio
-
-    bx = x + (w - bw) / 2
-    by = y + (h - bh) / 2
-
-    stroke = max(min(bw, bh) * 0.03, 0.22)
-    cx = bx + bw / 2
-
-    lid_y = by + bh * 0.16
-    bar_y = by + bh * 0.22
-    parent.add(dwg.line((cx - bw * 0.19, bar_y), (cx + bw * 0.19, bar_y), stroke="black", stroke_width=stroke))
-    parent.add(dwg.line((cx - bw * 0.07, lid_y), (cx + bw * 0.07, lid_y), stroke="black", stroke_width=stroke))
-
-    top_y = by + bh * 0.30
-    bot_y = by + bh * 0.80
-    top_w = bw * 0.34
-    bot_w = bw * 0.26
-
-    body_pts = [
-        (cx - top_w / 2, top_y),
-        (cx + top_w / 2, top_y),
-        (cx + bot_w / 2, bot_y),
-        (cx - bot_w / 2, bot_y),
-    ]
-    parent.add(dwg.polygon(points=body_pts, fill="none", stroke="black", stroke_width=stroke))
-
-    r = bw * 0.035
-    parent.add(dwg.circle(center=(cx - bw * 0.09, bot_y + bh * 0.05), r=r, fill="none", stroke="black", stroke_width=stroke))
-    parent.add(dwg.circle(center=(cx + bw * 0.09, bot_y + bh * 0.05), r=r, fill="none", stroke="black", stroke_width=stroke))
-
-    # crossed lines
-    parent.add(dwg.line((bx + bw * 0.16, by + bh * 0.10), (bx + bw * 0.86, by + bh * 0.92), stroke="black", stroke_width=stroke))
-    parent.add(dwg.line((bx + bw * 0.86, by + bh * 0.10), (bx + bw * 0.16, by + bh * 0.92), stroke="black", stroke_width=stroke))
-
-
-# DXF helpers -----------------------------------------------------------------
-def dy(plate_h: float, y_top: float) -> float:
-    return plate_h - y_top
-
-
-def add_dxf_rect(msp, x, y, w, h, plate_h, layer="0"):
-    pts = [
-        (x, dy(plate_h, y)),
-        (x + w, dy(plate_h, y)),
-        (x + w, dy(plate_h, y + h)),
-        (x, dy(plate_h, y + h)),
-    ]
-    msp.add_lwpolyline(pts, close=True, dxfattribs={"layer": layer})
-
-
-def add_dxf_text(msp, text, x, y, height, plate_h, align=TextEntityAlignment.LEFT, rotation=0):
-    text = clamp_text(text)
-    if not text:
-        return
-    ent = msp.add_text(text, dxfattribs={"height": max(height, 1.0), "rotation": rotation})
-    ent.set_placement((x, dy(plate_h, y)), align=align)
-
-
-def add_dxf_box_text(msp, text, x, y, w, h, height, plate_h):
-    text = clamp_text(text)
-    if not text:
-        return
-    ent = msp.add_text(text, dxfattribs={"height": max(height, 1.0)})
-    ent.set_placement((x + w / 2, dy(plate_h, y + h / 2)), align=TextEntityAlignment.MIDDLE_CENTER)
-
-
-def add_dxf_multiline(msp, lines, x, y, height, line_gap, plate_h):
-    for idx, line in enumerate(lines):
-        if not line:
-            continue
-        add_dxf_text(msp, line, x, y + idx * line_gap, height, plate_h)
-
-
-def add_dxf_line(msp, x1, y1, x2, y2, plate_h):
-    msp.add_line((x1, dy(plate_h, y1)), (x2, dy(plate_h, y2)))
-
-
-def add_dxf_polyline(msp, pts, plate_h, close=False):
-    dxf_pts = [(x, dy(plate_h, y)) for x, y in pts]
-    msp.add_lwpolyline(dxf_pts, close=close)
-
-
-def draw_warning_symbol_dxf(msp, x, y, w, h, plate_h):
-    pts = [
-        (x + 0.42 * w, y + 0.10 * h),
-        (x + 0.67 * w, y + 0.10 * h),
-        (x + 0.52 * w, y + 0.44 * h),
-        (x + 0.80 * w, y + 0.44 * h),
-        (x + 0.43 * w, y + 0.92 * h),
-        (x + 0.51 * w, y + 0.61 * h),
-        (x + 0.25 * w, y + 0.61 * h),
-    ]
-    add_dxf_polyline(msp, pts, plate_h, close=True)
+def ensure_layers(doc):
+    wanted = {
+        "BORDER": 7,
+        "HOLES": 2,
+        "TEXT": 7,
+        "LOGOS": 1,
+        "GUIDE": 5,
+    }
+    for name, color in wanted.items():
+        if name not in doc.layers:
+            doc.layers.add(name=name, color=color)
 
 
 def tokenize_svg_path(path_d: str):
@@ -336,7 +200,6 @@ def vector_angle(ux, uy, vx, vy):
 def sample_svg_arc(x1, y1, rx, ry, x_axis_rotation, large_arc_flag, sweep_flag, x2, y2, steps=28):
     rx = abs(rx)
     ry = abs(ry)
-
     if rx == 0 or ry == 0:
         return [(x2, y2)]
 
@@ -397,7 +260,6 @@ def svg_path_to_points(path_d: str, tx=0.0, ty=0.0, scale=1.0, arc_steps=28):
     i = 0
     cmd = None
     x = y = 0.0
-    start_x = start_y = 0.0
     pts = []
 
     while i < len(tokens):
@@ -408,7 +270,6 @@ def svg_path_to_points(path_d: str, tx=0.0, ty=0.0, scale=1.0, arc_steps=28):
 
         if cmd == "M":
             x = float(tokens[i]); y = float(tokens[i + 1]); i += 2
-            start_x, start_y = x, y
             pts.append((tx + x * scale, ty + y * scale))
             cmd = "L"
         elif cmd == "L":
@@ -418,13 +279,11 @@ def svg_path_to_points(path_d: str, tx=0.0, ty=0.0, scale=1.0, arc_steps=28):
             rx = float(tokens[i]); ry = float(tokens[i + 1]); xrot = float(tokens[i + 2])
             large_arc = int(float(tokens[i + 3])); sweep = int(float(tokens[i + 4]))
             x2 = float(tokens[i + 5]); y2 = float(tokens[i + 6]); i += 7
-
             arc_pts = sample_svg_arc(x, y, rx, ry, xrot, large_arc, sweep, x2, y2, steps=arc_steps)
             for ax, ay in arc_pts:
                 pts.append((tx + ax * scale, ty + ay * scale))
             x, y = x2, y2
         elif cmd == "Z":
-            # close handled by polyline close=True
             cmd = None
         else:
             break
@@ -432,7 +291,246 @@ def svg_path_to_points(path_d: str, tx=0.0, ty=0.0, scale=1.0, arc_steps=28):
     return pts
 
 
-def draw_ce_logo_dxf(msp, x, y, w, h, plate_h):
+def draw_svg_text(dwg, parent, text, x, y, size, weight="normal", anchor="start", rotate=None, family="Arial, Helvetica, sans-serif", fill="black"):
+    text = clamp_text(text)
+    if not text:
+        return
+    el = dwg.text(
+        text,
+        insert=(x, y),
+        font_size=size,
+        font_family=family,
+        font_weight=weight,
+        text_anchor=anchor,
+        fill=fill,
+    )
+    if rotate is not None:
+        el.rotate(rotate, center=(x, y))
+    parent.add(el)
+
+
+def draw_svg_box_text(dwg, parent, text, x, y, w, h, base_size, weight="normal", family="Arial, Helvetica, sans-serif"):
+    text = clamp_text(text)
+    if not text:
+        return
+    size = fit_font_size(text, base_size, w, padding=1.1)
+    el = dwg.text(
+        text,
+        insert=(x + w / 2, y + h / 2),
+        font_size=size,
+        font_family=family,
+        font_weight=weight,
+        text_anchor="middle",
+        fill="black",
+    )
+    el["dominant-baseline"] = "middle"
+    parent.add(el)
+
+
+def draw_svg_multiline(dwg, parent, lines, x, y, size, line_gap, first_bold=True):
+    max_line_len = max((len(clamp_text(line)) for line in lines if clamp_text(line)), default=0)
+    if max_line_len > 28:
+        size *= 0.92
+        line_gap *= 0.94
+    if max_line_len > 36:
+        size *= 0.90
+        line_gap *= 0.92
+    for idx, line in enumerate(lines):
+        if not line:
+            continue
+        weight = "bold" if (idx == 0 and first_bold) else "normal"
+        draw_svg_text(dwg, parent, line, x, y + idx * line_gap, size, weight=weight)
+
+
+def draw_box_svg(dwg, parent, x, y, w, h, stroke_w=0.28, stroke="black"):
+    parent.add(
+        dwg.rect(
+            insert=(x, y),
+            size=(w, h),
+            fill="none",
+            stroke=stroke,
+            stroke_width=stroke_w,
+        )
+    )
+
+
+def draw_warning_symbol_svg(dwg, parent, x, y, w, h):
+    pts = [
+        (x + 0.42 * w, y + 0.10 * h),
+        (x + 0.67 * w, y + 0.10 * h),
+        (x + 0.52 * w, y + 0.44 * h),
+        (x + 0.80 * w, y + 0.44 * h),
+        (x + 0.43 * w, y + 0.92 * h),
+        (x + 0.51 * w, y + 0.61 * h),
+        (x + 0.25 * w, y + 0.61 * h),
+    ]
+    parent.add(dwg.polygon(points=pts, fill="#c60000", stroke="none"))
+
+
+def draw_ce_logo_svg(dwg, parent, x, y, w, h):
+    scale = min(w / 280.0, h / 200.0)
+    logo_w = 280.0 * scale
+    logo_h = 200.0 * scale
+    tx = x + (w - logo_w) / 2
+    ty = y + (h - logo_h) / 2
+
+    grp = dwg.g()
+    grp["style"] = "fill-rule:evenodd;clip-rule:evenodd"
+
+    p1 = dwg.path(d=CE_PATH_1, fill="black")
+    p1["fill-rule"] = "evenodd"
+    p1["clip-rule"] = "evenodd"
+    p1.update({"transform": f"translate({tx},{ty}) scale({scale})"})
+    grp.add(p1)
+
+    p2 = dwg.path(d=CE_PATH_2, fill="black")
+    p2["fill-rule"] = "evenodd"
+    p2["clip-rule"] = "evenodd"
+    p2.update({"transform": f"translate({tx},{ty}) scale({scale})"})
+    grp.add(p2)
+
+    parent.add(grp)
+
+
+def draw_bin_logo_svg(dwg, parent, x, y, w, h):
+    target_ratio = 0.62
+    if w / h > target_ratio:
+        bh = h
+        bw = h * target_ratio
+    else:
+        bw = w
+        bh = w / target_ratio
+
+    bx = x + (w - bw) / 2
+    by = y + (h - bh) / 2
+
+    stroke = max(min(bw, bh) * 0.03, 0.22)
+    cx = bx + bw / 2
+
+    lid_y = by + bh * 0.16
+    bar_y = by + bh * 0.22
+    parent.add(dwg.line((cx - bw * 0.19, bar_y), (cx + bw * 0.19, bar_y), stroke="black", stroke_width=stroke))
+    parent.add(dwg.line((cx - bw * 0.07, lid_y), (cx + bw * 0.07, lid_y), stroke="black", stroke_width=stroke))
+
+    top_y = by + bh * 0.30
+    bot_y = by + bh * 0.80
+    top_w = bw * 0.34
+    bot_w = bw * 0.26
+
+    body_pts = [
+        (cx - top_w / 2, top_y),
+        (cx + top_w / 2, top_y),
+        (cx + bot_w / 2, bot_y),
+        (cx - bot_w / 2, bot_y),
+    ]
+    parent.add(dwg.polygon(points=body_pts, fill="none", stroke="black", stroke_width=stroke))
+
+    r = bw * 0.035
+    parent.add(dwg.circle(center=(cx - bw * 0.09, bot_y + bh * 0.05), r=r, fill="none", stroke="black", stroke_width=stroke))
+    parent.add(dwg.circle(center=(cx + bw * 0.09, bot_y + bh * 0.05), r=r, fill="none", stroke="black", stroke_width=stroke))
+
+    parent.add(dwg.line((bx + bw * 0.16, by + bh * 0.10), (bx + bw * 0.86, by + bh * 0.92), stroke="black", stroke_width=stroke))
+    parent.add(dwg.line((bx + bw * 0.86, by + bh * 0.10), (bx + bw * 0.16, by + bh * 0.92), stroke="black", stroke_width=stroke))
+
+
+def draw_svg_dim_h(dwg, parent, x1, x2, y_obj, y_dim, text):
+    stroke_w = 0.22
+    parent.add(dwg.line((x1, y_obj), (x1, y_dim), stroke=GUIDE_COLOR, stroke_width=stroke_w))
+    parent.add(dwg.line((x2, y_obj), (x2, y_dim), stroke=GUIDE_COLOR, stroke_width=stroke_w))
+    parent.add(dwg.line((x1, y_dim), (x2, y_dim), stroke=GUIDE_COLOR, stroke_width=stroke_w))
+    ah = 1.6
+    parent.add(dwg.line((x1, y_dim), (x1 + ah, y_dim - 0.8), stroke=GUIDE_COLOR, stroke_width=stroke_w))
+    parent.add(dwg.line((x1, y_dim), (x1 + ah, y_dim + 0.8), stroke=GUIDE_COLOR, stroke_width=stroke_w))
+    parent.add(dwg.line((x2, y_dim), (x2 - ah, y_dim - 0.8), stroke=GUIDE_COLOR, stroke_width=stroke_w))
+    parent.add(dwg.line((x2, y_dim), (x2 - ah, y_dim + 0.8), stroke=GUIDE_COLOR, stroke_width=stroke_w))
+    draw_svg_text(dwg, parent, text, (x1 + x2) / 2, y_dim - 1.2, 2.2, anchor="middle", fill=GUIDE_COLOR)
+
+
+def draw_svg_dim_v(dwg, parent, y1, y2, x_obj, x_dim, text):
+    stroke_w = 0.22
+    parent.add(dwg.line((x_obj, y1), (x_dim, y1), stroke=GUIDE_COLOR, stroke_width=stroke_w))
+    parent.add(dwg.line((x_obj, y2), (x_dim, y2), stroke=GUIDE_COLOR, stroke_width=stroke_w))
+    parent.add(dwg.line((x_dim, y1), (x_dim, y2), stroke=GUIDE_COLOR, stroke_width=stroke_w))
+    ah = 1.6
+    parent.add(dwg.line((x_dim, y1), (x_dim - 0.8, y1 + ah), stroke=GUIDE_COLOR, stroke_width=stroke_w))
+    parent.add(dwg.line((x_dim, y1), (x_dim + 0.8, y1 + ah), stroke=GUIDE_COLOR, stroke_width=stroke_w))
+    parent.add(dwg.line((x_dim, y2), (x_dim - 0.8, y2 - ah), stroke=GUIDE_COLOR, stroke_width=stroke_w))
+    parent.add(dwg.line((x_dim, y2), (x_dim + 0.8, y2 - ah), stroke=GUIDE_COLOR, stroke_width=stroke_w))
+    draw_svg_text(dwg, parent, text, x_dim - 1.2, (y1 + y2) / 2, 2.2, anchor="middle", rotate=-90, fill=GUIDE_COLOR)
+
+
+def dy(plate_h: float, y_top: float) -> float:
+    return plate_h - y_top
+
+
+def add_dxf_rect(msp, x, y, w, h, plate_h, layer="0"):
+    pts = [
+        (x, dy(plate_h, y)),
+        (x + w, dy(plate_h, y)),
+        (x + w, dy(plate_h, y + h)),
+        (x, dy(plate_h, y + h)),
+    ]
+    msp.add_lwpolyline(pts, close=True, dxfattribs={"layer": layer})
+
+
+def add_dxf_text(msp, text, x, y, height, plate_h, align=TextEntityAlignment.LEFT, rotation=0, layer="0"):
+    text = clamp_text(text)
+    if not text:
+        return
+    ent = msp.add_text(text, dxfattribs={"height": max(height, 1.0), "rotation": rotation, "layer": layer})
+    ent.set_placement((x, dy(plate_h, y)), align=align)
+
+
+def add_dxf_box_text(msp, text, x, y, w, h, base_height, plate_h, layer="0"):
+    text = clamp_text(text)
+    if not text:
+        return
+    height = fit_font_size(text, base_height, w, padding=1.1)
+    ent = msp.add_text(text, dxfattribs={"height": max(height, 1.0), "layer": layer})
+    ent.set_placement((x + w / 2, dy(plate_h, y + h / 2)), align=TextEntityAlignment.MIDDLE_CENTER)
+
+
+def add_dxf_multiline(msp, lines, x, y, height, line_gap, plate_h, layer="0"):
+    max_line_len = max((len(clamp_text(line)) for line in lines if clamp_text(line)), default=0)
+    if max_line_len > 28:
+        height *= 0.92
+        line_gap *= 0.94
+    if max_line_len > 36:
+        height *= 0.90
+        line_gap *= 0.92
+    for idx, line in enumerate(lines):
+        if not line:
+            continue
+        add_dxf_text(msp, line, x, y + idx * line_gap, height, plate_h, layer=layer)
+
+
+def add_dxf_line(msp, x1, y1, x2, y2, plate_h, layer="0"):
+    msp.add_line((x1, dy(plate_h, y1)), (x2, dy(plate_h, y2)), dxfattribs={"layer": layer})
+
+
+def add_dxf_polyline(msp, pts, plate_h, close=False, layer="0"):
+    dxf_pts = [(x, dy(plate_h, y)) for x, y in pts]
+    msp.add_lwpolyline(dxf_pts, close=close, dxfattribs={"layer": layer})
+
+
+def add_dxf_circle(msp, cx, cy, r, plate_h, layer="0"):
+    msp.add_circle((cx, dy(plate_h, cy)), r, dxfattribs={"layer": layer})
+
+
+def draw_warning_symbol_dxf(msp, x, y, w, h, plate_h, layer="LOGOS"):
+    pts = [
+        (x + 0.42 * w, y + 0.10 * h),
+        (x + 0.67 * w, y + 0.10 * h),
+        (x + 0.52 * w, y + 0.44 * h),
+        (x + 0.80 * w, y + 0.44 * h),
+        (x + 0.43 * w, y + 0.92 * h),
+        (x + 0.51 * w, y + 0.61 * h),
+        (x + 0.25 * w, y + 0.61 * h),
+    ]
+    add_dxf_polyline(msp, pts, plate_h, close=True, layer=layer)
+
+
+def draw_ce_logo_dxf(msp, x, y, w, h, plate_h, layer="LOGOS"):
     scale = min(w / 280.0, h / 200.0)
     logo_w = 280.0 * scale
     logo_h = 200.0 * scale
@@ -442,11 +540,11 @@ def draw_ce_logo_dxf(msp, x, y, w, h, plate_h):
     pts1 = svg_path_to_points(CE_PATH_1, tx=tx, ty=ty, scale=scale, arc_steps=36)
     pts2 = svg_path_to_points(CE_PATH_2, tx=tx, ty=ty, scale=scale, arc_steps=36)
 
-    add_dxf_polyline(msp, pts1, plate_h, close=True)
-    add_dxf_polyline(msp, pts2, plate_h, close=True)
+    add_dxf_polyline(msp, pts1, plate_h, close=True, layer=layer)
+    add_dxf_polyline(msp, pts2, plate_h, close=True, layer=layer)
 
 
-def draw_bin_logo_dxf(msp, x, y, w, h, plate_h):
+def draw_bin_logo_dxf(msp, x, y, w, h, plate_h, layer="LOGOS"):
     target_ratio = 0.62
     if w / h > target_ratio:
         bh = h
@@ -461,8 +559,8 @@ def draw_bin_logo_dxf(msp, x, y, w, h, plate_h):
 
     lid_y = by + bh * 0.16
     bar_y = by + bh * 0.22
-    add_dxf_line(msp, cx - bw * 0.19, bar_y, cx + bw * 0.19, bar_y, plate_h)
-    add_dxf_line(msp, cx - bw * 0.07, lid_y, cx + bw * 0.07, lid_y, plate_h)
+    add_dxf_line(msp, cx - bw * 0.19, bar_y, cx + bw * 0.19, bar_y, plate_h, layer=layer)
+    add_dxf_line(msp, cx - bw * 0.07, lid_y, cx + bw * 0.07, lid_y, plate_h, layer=layer)
 
     top_y = by + bh * 0.30
     bot_y = by + bh * 0.80
@@ -475,36 +573,96 @@ def draw_bin_logo_dxf(msp, x, y, w, h, plate_h):
         (cx + bot_w / 2, bot_y),
         (cx - bot_w / 2, bot_y),
     ]
-    add_dxf_polyline(msp, body_pts, plate_h, close=True)
+    add_dxf_polyline(msp, body_pts, plate_h, close=True, layer=layer)
 
     r = bw * 0.035
-    msp.add_circle((cx - bw * 0.09, dy(plate_h, bot_y + bh * 0.05)), r)
-    msp.add_circle((cx + bw * 0.09, dy(plate_h, bot_y + bh * 0.05)), r)
+    add_dxf_circle(msp, cx - bw * 0.09, bot_y + bh * 0.05, r, plate_h, layer=layer)
+    add_dxf_circle(msp, cx + bw * 0.09, bot_y + bh * 0.05, r, plate_h, layer=layer)
 
-    # crossed lines
-    add_dxf_line(msp, bx + bw * 0.16, by + bh * 0.10, bx + bw * 0.86, by + bh * 0.92, plate_h)
-    add_dxf_line(msp, bx + bw * 0.86, by + bh * 0.10, bx + bw * 0.16, by + bh * 0.92, plate_h)
+    add_dxf_line(msp, bx + bw * 0.16, by + bh * 0.10, bx + bw * 0.86, by + bh * 0.92, plate_h, layer=layer)
+    add_dxf_line(msp, bx + bw * 0.86, by + bh * 0.10, bx + bw * 0.16, by + bh * 0.92, plate_h, layer=layer)
 
 
-# -----------------------------------------------------------------------------
-# SVG generation
-# -----------------------------------------------------------------------------
-def generate_plate_svg(w: float, h: float) -> str:
-    dwg = svgwrite.Drawing(size=(f"{w}mm", f"{h}mm"), viewBox=f"0 0 {w} {h}")
-    dwg.attribs["style"] = "background:white"
+def draw_dxf_dim_h(msp, x1, x2, y_obj, y_dim, text, plate_h, layer="GUIDE"):
+    add_dxf_line(msp, x1, y_obj, x1, y_dim, plate_h, layer=layer)
+    add_dxf_line(msp, x2, y_obj, x2, y_dim, plate_h, layer=layer)
+    add_dxf_line(msp, x1, y_dim, x2, y_dim, plate_h, layer=layer)
+    ah = 1.6
+    add_dxf_line(msp, x1, y_dim, x1 + ah, y_dim - 0.8, plate_h, layer=layer)
+    add_dxf_line(msp, x1, y_dim, x1 + ah, y_dim + 0.8, plate_h, layer=layer)
+    add_dxf_line(msp, x2, y_dim, x2 - ah, y_dim - 0.8, plate_h, layer=layer)
+    add_dxf_line(msp, x2, y_dim, x2 - ah, y_dim + 0.8, plate_h, layer=layer)
+    add_dxf_text(msp, text, (x1 + x2) / 2, y_dim - 1.2, 2.2, plate_h, align=TextEntityAlignment.MIDDLE_CENTER, layer=layer)
 
-    template_w = 160.0
-    template_h = 150.0
 
-    sx = w / template_w
-    sy = h / template_h
+def draw_dxf_dim_v(msp, y1, y2, x_obj, x_dim, text, plate_h, layer="GUIDE"):
+    add_dxf_line(msp, x_obj, y1, x_dim, y1, plate_h, layer=layer)
+    add_dxf_line(msp, x_obj, y2, x_dim, y2, plate_h, layer=layer)
+    add_dxf_line(msp, x_dim, y1, x_dim, y2, plate_h, layer=layer)
+    ah = 1.6
+    add_dxf_line(msp, x_dim, y1, x_dim - 0.8, y1 + ah, plate_h, layer=layer)
+    add_dxf_line(msp, x_dim, y1, x_dim + 0.8, y1 + ah, plate_h, layer=layer)
+    add_dxf_line(msp, x_dim, y2, x_dim - 0.8, y2 - ah, plate_h, layer=layer)
+    add_dxf_line(msp, x_dim, y2, x_dim + 0.8, y2 - ah, plate_h, layer=layer)
+    add_dxf_text(msp, text, x_dim - 1.2, (y1 + y2) / 2, 2.2, plate_h, align=TextEntityAlignment.MIDDLE_CENTER, rotation=90, layer=layer)
+
+
+def layout_values(w: float, h: float):
+    sx = w / TEMPLATE_W
+    sy = h / TEMPLATE_H
 
     def X(v): return v * sx
     def Y(v): return v * sy
 
+    ix = border_offset
+    iy = border_offset
+    iw = w - 2 * border_offset
+    ih = h - 2 * border_offset
+
+    panel_w = X(44)
+    mx = ix + panel_w + X(4)
+    my = iy + Y(2.5)
+    mr = ix + iw - X(4)
+    main_w = mr - mx
+
+    return {
+        "X": X,
+        "Y": Y,
+        "ix": ix,
+        "iy": iy,
+        "iw": iw,
+        "ih": ih,
+        "panel_w": panel_w,
+        "mx": mx,
+        "my": my,
+        "mr": mr,
+        "main_w": main_w,
+    }
+
+
+def generate_plate_svg(w: float, h: float, show_dims: bool = False, for_preview: bool = False) -> str:
+    pad = 18 if show_dims and for_preview else 0
+    dwg = svgwrite.Drawing(
+        size=(f"{w}mm", f"{h}mm"),
+        viewBox=f"{-pad} {-pad} {w + 2 * pad} {h + 2 * pad}",
+    )
+    dwg.attribs["style"] = "background:white"
+
+    l = layout_values(w, h)
+    X = l["X"]
+    Y = l["Y"]
+    ix = l["ix"]
+    iy = l["iy"]
+    iw = l["iw"]
+    ih = l["ih"]
+    panel_w = l["panel_w"]
+    mx = l["mx"]
+    my = l["my"]
+    mr = l["mr"]
+    main_w = l["main_w"]
+
     outer = dwg.g(id="outer")
     dwg.add(outer)
-
     outer.add(
         dwg.rect(
             insert=(0.5, 0.5),
@@ -538,32 +696,19 @@ def generate_plate_svg(w: float, h: float) -> str:
 
     content = dwg.g(id="content")
     dwg.add(content)
-
-    ix = border_offset
-    iy = border_offset
-    iw = w - 2 * border_offset
-    ih = h - 2 * border_offset
-
-    # Left symbol panel
-    panel_w = X(44)
     content.add(dwg.line(start=(ix + panel_w, iy), end=(ix + panel_w, iy + ih), stroke="black", stroke_width=0.35))
 
-    pad = X(4.5)
-    zone_x = ix + pad
+    pad_zone = X(4.5)
+    zone_x = ix + pad_zone
     zone_y = iy + Y(6)
-    zone_w = panel_w - 2 * pad
+    zone_w = panel_w - 2 * pad_zone
     zone_h = ih - Y(12)
-
-    if show_ce_logo or show_bin_logo:
-        lightning_h = zone_h * 0.56
-    else:
-        lightning_h = zone_h * 0.78
+    lightning_h = zone_h * 0.56 if (show_ce_logo or show_bin_logo) else zone_h * 0.78
 
     if show_warning_symbol:
         draw_warning_symbol_svg(dwg, content, zone_x, zone_y, zone_w, lightning_h)
 
     logo_y = zone_y + lightning_h + Y(3)
-
     if show_ce_logo:
         ce_h = Y(12)
         draw_ce_logo_svg(dwg, content, zone_x + zone_w * 0.06, logo_y, zone_w * 0.88, ce_h)
@@ -572,12 +717,6 @@ def generate_plate_svg(w: float, h: float) -> str:
     if show_bin_logo:
         bin_h = Y(12)
         draw_bin_logo_svg(dwg, content, zone_x + zone_w * 0.18, logo_y, zone_w * 0.64, bin_h)
-
-    # Main area
-    mx = ix + panel_w + X(4)
-    my = iy + Y(2.5)
-    mr = ix + iw - X(4)
-    main_w = mr - mx
 
     cx = mx + main_w / 2
     draw_svg_text(dwg, content, company_name, cx, my + Y(7), Y(7.0), weight="bold", anchor="middle")
@@ -616,75 +755,56 @@ def generate_plate_svg(w: float, h: float) -> str:
     y8 = my + Y(106.5)
     y9 = my + Y(118.0)
 
-    draw_svg_text(dwg, content, "Type", label_x, y1, small_font, weight="bold")
+    draw_svg_text(dwg, content, labels["type_short"], label_x, y1, small_font, weight="bold")
     draw_box_svg(dwg, content, box1_x, y1 - box_h / 2, box1_w, box_h)
     draw_svg_box_text(dwg, content, type_text, box1_x, y1 - box_h / 2, box1_w, box_h, value_font)
 
-    draw_svg_text(dwg, content, "No.", box2_label_x, y1, small_font, weight="bold")
+    draw_svg_text(dwg, content, labels["no_short"], box2_label_x, y1, small_font, weight="bold")
     draw_box_svg(dwg, content, box2_x, y1 - box_h / 2, box2_w, box_h)
     draw_svg_box_text(dwg, content, no_text, box2_x, y1 - box_h / 2, box2_w, box_h, value_font)
 
-    draw_svg_multiline(
-        dwg,
-        content,
-        ["Baujahr / Jahr der Überholung", "Year built / Year refurbished", "Année de fabrication / Année de rénovation"],
-        label_x,
-        y2,
-        small_font,
-        line_gap,
-    )
+    draw_svg_multiline(dwg, content, labels["year_label"], label_x, y2, small_font, line_gap)
     draw_box_svg(dwg, content, year_box1_x, y2 - box_h / 2, year_box_w, box_h)
     draw_svg_box_text(dwg, content, year_built, year_box1_x, y2 - box_h / 2, year_box_w, box_h, value_font)
-
     draw_box_svg(dwg, content, year_box2_x, y2 - box_h / 2, year_box_w, box_h)
     draw_svg_box_text(dwg, content, year_refurbished, year_box2_x, y2 - box_h / 2, year_box_w, box_h, value_font)
 
-    draw_svg_multiline(dwg, content, ["Stromart", "Current", "Nature du courant"], label_x, y3, small_font, line_gap)
+    draw_svg_multiline(dwg, content, labels["current_label"], label_x, y3, small_font, line_gap)
     draw_box_svg(dwg, content, box1_x, y3 - box_h / 2, box1_w, box_h)
     draw_svg_box_text(dwg, content, current_type, box1_x, y3 - box_h / 2, box1_w, box_h, value_font)
-
     draw_svg_text(dwg, content, "Hz", box2_label_x, y3, small_font, weight="bold")
     draw_box_svg(dwg, content, box2_x, y3 - box_h / 2, box2_w, box_h)
     draw_svg_box_text(dwg, content, hz_text, box2_x, y3 - box_h / 2, box2_w, box_h, value_font)
 
-    draw_svg_multiline(dwg, content, ["Betriebsspannung", "Working voltage", "Voltage de service"], label_x, y4, small_font, line_gap)
+    draw_svg_multiline(dwg, content, labels["working_voltage_label"], label_x, y4, small_font, line_gap)
     draw_svg_text(dwg, content, "V", unit_x, y4, small_font, weight="bold")
     draw_box_svg(dwg, content, single_box_x, y4 - box_h / 2, single_box_w, box_h)
     draw_svg_box_text(dwg, content, working_voltage, single_box_x, y4 - box_h / 2, single_box_w, box_h, value_font)
 
-    draw_svg_multiline(
-        dwg,
-        content,
-        ["Betriebsdruck Druckluft", "Compressed air pressure", "Pression d'air comprimé"],
-        label_x,
-        y5,
-        small_font,
-        line_gap,
-    )
+    draw_svg_multiline(dwg, content, labels["air_pressure_label"], label_x, y5, small_font, line_gap)
     draw_svg_text(dwg, content, "bar", unit_x - X(2), y5, small_font, weight="bold")
     draw_box_svg(dwg, content, single_box_x, y5 - box_h / 2, single_box_w, box_h)
     draw_svg_box_text(dwg, content, air_pressure, single_box_x, y5 - box_h / 2, single_box_w, box_h, value_font)
 
-    draw_svg_multiline(dwg, content, ["Steuerspannung", "Controlling voltage", "Voltage de commande"], label_x, y6, small_font, line_gap)
+    draw_svg_multiline(dwg, content, labels["control_voltage_label"], label_x, y6, small_font, line_gap)
     draw_svg_text(dwg, content, "V", unit_x, y6, small_font, weight="bold")
     draw_box_svg(dwg, content, single_box_x, y6 - box_h / 2, single_box_w, box_h)
     draw_svg_box_text(dwg, content, f"{control_voltage_dc} =", single_box_x, y6 - box_h / 2, single_box_w, box_h, value_font)
-
     draw_box_svg(dwg, content, single_box_x, y6b - box_h / 2, single_box_w, box_h)
     draw_svg_box_text(dwg, content, f"{control_voltage_ac} ~", single_box_x, y6b - box_h / 2, single_box_w, box_h, value_font)
 
-    draw_svg_multiline(dwg, content, ["Maschine Nennstrom", "Nominal current machine", "Machine intensité nominale"], label_x, y7, small_font, line_gap)
+    draw_svg_multiline(dwg, content, labels["machine_current_label"], label_x, y7, small_font, line_gap)
     draw_svg_text(dwg, content, "A", unit_x, y7, small_font, weight="bold")
     draw_box_svg(dwg, content, single_box_x, y7 - box_h / 2, single_box_w, box_h)
     draw_svg_box_text(dwg, content, machine_current, single_box_x, y7 - box_h / 2, single_box_w, box_h, value_font)
 
-    draw_svg_multiline(dwg, content, ["Sicherungs-Nennstrom", "Nominal current fuses", "Intensité de protection nominale"], label_x, y8, small_font, line_gap)
+    draw_svg_multiline(dwg, content, labels["fuse_current_label"], label_x, y8, small_font, line_gap)
     draw_svg_text(dwg, content, "A", unit_x, y8, small_font, weight="bold")
     draw_box_svg(dwg, content, single_box_x, y8 - box_h / 2, single_box_w, box_h)
     draw_svg_box_text(dwg, content, fuse_current, single_box_x, y8 - box_h / 2, single_box_w, box_h, value_font)
 
-    draw_svg_multiline(dwg, content, ["Schaltplan", "Schematic", "Schéma de connexions"], label_x, y9, small_font, line_gap)
-    draw_svg_text(dwg, content, "No.", unit_x - X(6), y9, small_font, weight="bold")
+    draw_svg_multiline(dwg, content, labels["schematic_label"], label_x, y9, small_font, line_gap)
+    draw_svg_text(dwg, content, labels["no_short"], unit_x - X(6), y9, small_font, weight="bold")
     schematic_x = single_box_x - X(12)
     schematic_w = single_box_w + X(12)
     draw_box_svg(dwg, content, schematic_x, y9 - box_h / 2, schematic_w, box_h)
@@ -693,31 +813,43 @@ def generate_plate_svg(w: float, h: float) -> str:
     bottom_box_h = Y(3.4)
     bottom_box_y = iy + ih - Y(7.6)
     draw_box_svg(dwg, content, mx + X(4), bottom_box_y, main_w - X(6), bottom_box_h)
-
     draw_svg_text(dwg, content, footer_no, mr - X(1), iy + ih - Y(0.9), Y(1.8), anchor="end")
+
+    if show_dims and for_preview:
+        guides = dwg.g(id="guides")
+        dwg.add(guides)
+        draw_svg_dim_h(dwg, guides, 0, w, h, h + 9, f"{w:.1f} mm")
+        draw_svg_dim_v(dwg, guides, 0, h, 0, -9, f"{h:.1f} mm")
+        if hole_diameter > 0 and (show_left_holes or show_right_holes):
+            draw_svg_dim_h(dwg, guides, 0, hole_offset, 0, -6, f"{hole_offset:.1f} mm")
+            draw_svg_dim_v(dwg, guides, 0, hole_offset, 0, -6, f"{hole_offset:.1f} mm")
+            draw_svg_text(dwg, guides, f"Ø {hole_diameter:.1f} mm", hole_offset + 4.5, hole_offset - 2.0, 2.2, fill=GUIDE_COLOR)
+        draw_svg_text(dwg, guides, f"Notranji rob: {border_offset:.1f} mm", w - 3, -6.0, 2.2, anchor="end", fill=GUIDE_COLOR)
 
     return dwg.tostring()
 
 
-# -----------------------------------------------------------------------------
-# DXF generation
-# -----------------------------------------------------------------------------
-def generate_plate_dxf(w: float, h: float) -> bytes:
+def generate_plate_dxf(w: float, h: float, include_guides: bool = False) -> bytes:
     doc = ezdxf.new("R2010", setup=True)
     doc.units = 4
+    ensure_layers(doc)
     msp = doc.modelspace()
 
-    template_w = 160.0
-    template_h = 150.0
+    l = layout_values(w, h)
+    X = l["X"]
+    Y = l["Y"]
+    ix = l["ix"]
+    iy = l["iy"]
+    iw = l["iw"]
+    ih = l["ih"]
+    panel_w = l["panel_w"]
+    mx = l["mx"]
+    my = l["my"]
+    mr = l["mr"]
+    main_w = l["main_w"]
 
-    sx = w / template_w
-    sy = h / template_h
-
-    def X(v): return v * sx
-    def Y(v): return v * sy
-
-    add_dxf_rect(msp, 0, 0, w, h, h)
-    add_dxf_rect(msp, border_offset, border_offset, w - 2 * border_offset, h - 2 * border_offset, h)
+    add_dxf_rect(msp, 0, 0, w, h, h, layer="BORDER")
+    add_dxf_rect(msp, border_offset, border_offset, w - 2 * border_offset, h - 2 * border_offset, h, layer="BORDER")
 
     if hole_diameter > 0:
         r = hole_diameter / 2
@@ -727,50 +859,34 @@ def generate_plate_dxf(w: float, h: float) -> bytes:
         if show_right_holes:
             holes.extend([(w - hole_offset, hole_offset), (w - hole_offset, h - hole_offset)])
         for cx, cy in holes:
-            msp.add_circle((cx, dy(h, cy)), r)
+            add_dxf_circle(msp, cx, cy, r, h, layer="HOLES")
 
-    ix = border_offset
-    iy = border_offset
-    iw = w - 2 * border_offset
-    ih = h - 2 * border_offset
+    add_dxf_line(msp, ix + panel_w, iy, ix + panel_w, iy + ih, h, layer="BORDER")
 
-    panel_w = X(44)
-    add_dxf_line(msp, ix + panel_w, iy, ix + panel_w, iy + ih, h)
-
-    pad = X(4.5)
-    zone_x = ix + pad
+    pad_zone = X(4.5)
+    zone_x = ix + pad_zone
     zone_y = iy + Y(6)
-    zone_w = panel_w - 2 * pad
+    zone_w = panel_w - 2 * pad_zone
     zone_h = ih - Y(12)
-
-    if show_ce_logo or show_bin_logo:
-        lightning_h = zone_h * 0.56
-    else:
-        lightning_h = zone_h * 0.78
+    lightning_h = zone_h * 0.56 if (show_ce_logo or show_bin_logo) else zone_h * 0.78
 
     if show_warning_symbol:
-        draw_warning_symbol_dxf(msp, zone_x, zone_y, zone_w, lightning_h, h)
+        draw_warning_symbol_dxf(msp, zone_x, zone_y, zone_w, lightning_h, h, layer="LOGOS")
 
     logo_y = zone_y + lightning_h + Y(3)
-
     if show_ce_logo:
         ce_h = Y(12)
-        draw_ce_logo_dxf(msp, zone_x + zone_w * 0.06, logo_y, zone_w * 0.88, ce_h, h)
+        draw_ce_logo_dxf(msp, zone_x + zone_w * 0.06, logo_y, zone_w * 0.88, ce_h, h, layer="LOGOS")
         logo_y += ce_h + Y(3)
 
     if show_bin_logo:
         bin_h = Y(12)
-        draw_bin_logo_dxf(msp, zone_x + zone_w * 0.18, logo_y, zone_w * 0.64, bin_h, h)
-
-    mx = ix + panel_w + X(4)
-    my = iy + Y(2.5)
-    mr = ix + iw - X(4)
-    main_w = mr - mx
+        draw_bin_logo_dxf(msp, zone_x + zone_w * 0.18, logo_y, zone_w * 0.64, bin_h, h, layer="LOGOS")
 
     cx = mx + main_w / 2
-    add_dxf_text(msp, company_name, cx, my + Y(7), Y(5.6), h, align=TextEntityAlignment.MIDDLE_CENTER)
-    add_dxf_text(msp, company_line2, cx, my + Y(12.4), Y(2.7), h, align=TextEntityAlignment.MIDDLE_CENTER)
-    add_dxf_text(msp, company_line3, cx, my + Y(17.6), Y(2.7), h, align=TextEntityAlignment.MIDDLE_CENTER)
+    add_dxf_text(msp, company_name, cx, my + Y(7), Y(5.6), h, align=TextEntityAlignment.MIDDLE_CENTER, layer="TEXT")
+    add_dxf_text(msp, company_line2, cx, my + Y(12.4), Y(2.7), h, align=TextEntityAlignment.MIDDLE_CENTER, layer="TEXT")
+    add_dxf_text(msp, company_line3, cx, my + Y(17.6), Y(2.7), h, align=TextEntityAlignment.MIDDLE_CENTER, layer="TEXT")
 
     label_x = mx + X(0)
     box1_x = mx + X(22)
@@ -804,133 +920,123 @@ def generate_plate_dxf(w: float, h: float) -> bytes:
     y8 = my + Y(106.5)
     y9 = my + Y(118.0)
 
-    add_dxf_text(msp, "Type", label_x, y1, small_font, h)
-    add_dxf_rect(msp, box1_x, y1 - box_h / 2, box1_w, box_h, h)
-    add_dxf_box_text(msp, type_text, box1_x, y1 - box_h / 2, box1_w, box_h, value_font, h)
+    add_dxf_text(msp, labels["type_short"], label_x, y1, small_font, h, layer="TEXT")
+    add_dxf_rect(msp, box1_x, y1 - box_h / 2, box1_w, box_h, h, layer="BORDER")
+    add_dxf_box_text(msp, type_text, box1_x, y1 - box_h / 2, box1_w, box_h, value_font, h, layer="TEXT")
 
-    add_dxf_text(msp, "No.", box2_label_x, y1, small_font, h)
-    add_dxf_rect(msp, box2_x, y1 - box_h / 2, box2_w, box_h, h)
-    add_dxf_box_text(msp, no_text, box2_x, y1 - box_h / 2, box2_w, box_h, value_font, h)
+    add_dxf_text(msp, labels["no_short"], box2_label_x, y1, small_font, h, layer="TEXT")
+    add_dxf_rect(msp, box2_x, y1 - box_h / 2, box2_w, box_h, h, layer="BORDER")
+    add_dxf_box_text(msp, no_text, box2_x, y1 - box_h / 2, box2_w, box_h, value_font, h, layer="TEXT")
 
-    add_dxf_multiline(
-        msp,
-        ["Baujahr / Jahr der Überholung", "Year built / Year refurbished", "Année de fabrication / Année de rénovation"],
-        label_x,
-        y2,
-        small_font,
-        line_gap,
-        h,
-    )
-    add_dxf_rect(msp, year_box1_x, y2 - box_h / 2, year_box_w, box_h, h)
-    add_dxf_box_text(msp, year_built, year_box1_x, y2 - box_h / 2, year_box_w, box_h, value_font, h)
+    add_dxf_multiline(msp, labels["year_label"], label_x, y2, small_font, line_gap, h, layer="TEXT")
+    add_dxf_rect(msp, year_box1_x, y2 - box_h / 2, year_box_w, box_h, h, layer="BORDER")
+    add_dxf_box_text(msp, year_built, year_box1_x, y2 - box_h / 2, year_box_w, box_h, value_font, h, layer="TEXT")
+    add_dxf_rect(msp, year_box2_x, y2 - box_h / 2, year_box_w, box_h, h, layer="BORDER")
+    add_dxf_box_text(msp, year_refurbished, year_box2_x, y2 - box_h / 2, year_box_w, box_h, value_font, h, layer="TEXT")
 
-    add_dxf_rect(msp, year_box2_x, y2 - box_h / 2, year_box_w, box_h, h)
-    add_dxf_box_text(msp, year_refurbished, year_box2_x, y2 - box_h / 2, year_box_w, box_h, value_font, h)
+    add_dxf_multiline(msp, labels["current_label"], label_x, y3, small_font, line_gap, h, layer="TEXT")
+    add_dxf_rect(msp, box1_x, y3 - box_h / 2, box1_w, box_h, h, layer="BORDER")
+    add_dxf_box_text(msp, current_type, box1_x, y3 - box_h / 2, box1_w, box_h, value_font, h, layer="TEXT")
+    add_dxf_text(msp, "Hz", box2_label_x, y3, small_font, h, layer="TEXT")
+    add_dxf_rect(msp, box2_x, y3 - box_h / 2, box2_w, box_h, h, layer="BORDER")
+    add_dxf_box_text(msp, hz_text, box2_x, y3 - box_h / 2, box2_w, box_h, value_font, h, layer="TEXT")
 
-    add_dxf_multiline(msp, ["Stromart", "Current", "Nature du courant"], label_x, y3, small_font, line_gap, h)
-    add_dxf_rect(msp, box1_x, y3 - box_h / 2, box1_w, box_h, h)
-    add_dxf_box_text(msp, current_type, box1_x, y3 - box_h / 2, box1_w, box_h, value_font, h)
+    add_dxf_multiline(msp, labels["working_voltage_label"], label_x, y4, small_font, line_gap, h, layer="TEXT")
+    add_dxf_text(msp, "V", unit_x, y4, small_font, h, layer="TEXT")
+    add_dxf_rect(msp, single_box_x, y4 - box_h / 2, single_box_w, box_h, h, layer="BORDER")
+    add_dxf_box_text(msp, working_voltage, single_box_x, y4 - box_h / 2, single_box_w, box_h, value_font, h, layer="TEXT")
 
-    add_dxf_text(msp, "Hz", box2_label_x, y3, small_font, h)
-    add_dxf_rect(msp, box2_x, y3 - box_h / 2, box2_w, box_h, h)
-    add_dxf_box_text(msp, hz_text, box2_x, y3 - box_h / 2, box2_w, box_h, value_font, h)
+    add_dxf_multiline(msp, labels["air_pressure_label"], label_x, y5, small_font, line_gap, h, layer="TEXT")
+    add_dxf_text(msp, "bar", unit_x - X(2), y5, small_font, h, layer="TEXT")
+    add_dxf_rect(msp, single_box_x, y5 - box_h / 2, single_box_w, box_h, h, layer="BORDER")
+    add_dxf_box_text(msp, air_pressure, single_box_x, y5 - box_h / 2, single_box_w, box_h, value_font, h, layer="TEXT")
 
-    add_dxf_multiline(msp, ["Betriebsspannung", "Working voltage", "Voltage de service"], label_x, y4, small_font, line_gap, h)
-    add_dxf_text(msp, "V", unit_x, y4, small_font, h)
-    add_dxf_rect(msp, single_box_x, y4 - box_h / 2, single_box_w, box_h, h)
-    add_dxf_box_text(msp, working_voltage, single_box_x, y4 - box_h / 2, single_box_w, box_h, value_font, h)
+    add_dxf_multiline(msp, labels["control_voltage_label"], label_x, y6, small_font, line_gap, h, layer="TEXT")
+    add_dxf_text(msp, "V", unit_x, y6, small_font, h, layer="TEXT")
+    add_dxf_rect(msp, single_box_x, y6 - box_h / 2, single_box_w, box_h, h, layer="BORDER")
+    add_dxf_box_text(msp, f"{control_voltage_dc} =", single_box_x, y6 - box_h / 2, single_box_w, box_h, value_font, h, layer="TEXT")
+    add_dxf_rect(msp, single_box_x, y6b - box_h / 2, single_box_w, box_h, h, layer="BORDER")
+    add_dxf_box_text(msp, f"{control_voltage_ac} ~", single_box_x, y6b - box_h / 2, single_box_w, box_h, value_font, h, layer="TEXT")
 
-    add_dxf_multiline(
-        msp,
-        ["Betriebsdruck Druckluft", "Compressed air pressure", "Pression d'air comprimé"],
-        label_x,
-        y5,
-        small_font,
-        line_gap,
-        h,
-    )
-    add_dxf_text(msp, "bar", unit_x - X(2), y5, small_font, h)
-    add_dxf_rect(msp, single_box_x, y5 - box_h / 2, single_box_w, box_h, h)
-    add_dxf_box_text(msp, air_pressure, single_box_x, y5 - box_h / 2, single_box_w, box_h, value_font, h)
+    add_dxf_multiline(msp, labels["machine_current_label"], label_x, y7, small_font, line_gap, h, layer="TEXT")
+    add_dxf_text(msp, "A", unit_x, y7, small_font, h, layer="TEXT")
+    add_dxf_rect(msp, single_box_x, y7 - box_h / 2, single_box_w, box_h, h, layer="BORDER")
+    add_dxf_box_text(msp, machine_current, single_box_x, y7 - box_h / 2, single_box_w, box_h, value_font, h, layer="TEXT")
 
-    add_dxf_multiline(msp, ["Steuerspannung", "Controlling voltage", "Voltage de commande"], label_x, y6, small_font, line_gap, h)
-    add_dxf_text(msp, "V", unit_x, y6, small_font, h)
-    add_dxf_rect(msp, single_box_x, y6 - box_h / 2, single_box_w, box_h, h)
-    add_dxf_box_text(msp, f"{control_voltage_dc} =", single_box_x, y6 - box_h / 2, single_box_w, box_h, value_font, h)
+    add_dxf_multiline(msp, labels["fuse_current_label"], label_x, y8, small_font, line_gap, h, layer="TEXT")
+    add_dxf_text(msp, "A", unit_x, y8, small_font, h, layer="TEXT")
+    add_dxf_rect(msp, single_box_x, y8 - box_h / 2, single_box_w, box_h, h, layer="BORDER")
+    add_dxf_box_text(msp, fuse_current, single_box_x, y8 - box_h / 2, single_box_w, box_h, value_font, h, layer="TEXT")
 
-    add_dxf_rect(msp, single_box_x, y6b - box_h / 2, single_box_w, box_h, h)
-    add_dxf_box_text(msp, f"{control_voltage_ac} ~", single_box_x, y6b - box_h / 2, single_box_w, box_h, value_font, h)
-
-    add_dxf_multiline(msp, ["Maschine Nennstrom", "Nominal current machine", "Machine intensité nominale"], label_x, y7, small_font, line_gap, h)
-    add_dxf_text(msp, "A", unit_x, y7, small_font, h)
-    add_dxf_rect(msp, single_box_x, y7 - box_h / 2, single_box_w, box_h, h)
-    add_dxf_box_text(msp, machine_current, single_box_x, y7 - box_h / 2, single_box_w, box_h, value_font, h)
-
-    add_dxf_multiline(msp, ["Sicherungs-Nennstrom", "Nominal current fuses", "Intensité de protection nominale"], label_x, y8, small_font, line_gap, h)
-    add_dxf_text(msp, "A", unit_x, y8, small_font, h)
-    add_dxf_rect(msp, single_box_x, y8 - box_h / 2, single_box_w, box_h, h)
-    add_dxf_box_text(msp, fuse_current, single_box_x, y8 - box_h / 2, single_box_w, box_h, value_font, h)
-
-    add_dxf_multiline(msp, ["Schaltplan", "Schematic", "Schéma de connexions"], label_x, y9, small_font, line_gap, h)
-    add_dxf_text(msp, "No.", unit_x - X(6), y9, small_font, h)
+    add_dxf_multiline(msp, labels["schematic_label"], label_x, y9, small_font, line_gap, h, layer="TEXT")
+    add_dxf_text(msp, labels["no_short"], unit_x - X(6), y9, small_font, h, layer="TEXT")
     schematic_x = single_box_x - X(12)
     schematic_w = single_box_w + X(12)
-    add_dxf_rect(msp, schematic_x, y9 - box_h / 2, schematic_w, box_h, h)
-    add_dxf_box_text(msp, schematic_no, schematic_x, y9 - box_h / 2, schematic_w, box_h, value_font, h)
+    add_dxf_rect(msp, schematic_x, y9 - box_h / 2, schematic_w, box_h, h, layer="BORDER")
+    add_dxf_box_text(msp, schematic_no, schematic_x, y9 - box_h / 2, schematic_w, box_h, value_font, h, layer="TEXT")
 
     bottom_box_h = Y(3.4)
     bottom_box_y = iy + ih - Y(7.6)
-    add_dxf_rect(msp, mx + X(4), bottom_box_y, main_w - X(6), bottom_box_h, h)
+    add_dxf_rect(msp, mx + X(4), bottom_box_y, main_w - X(6), bottom_box_h, h, layer="BORDER")
+    add_dxf_text(msp, footer_no, mr - X(1), iy + ih - Y(0.9), Y(1.6), h, align=TextEntityAlignment.RIGHT, layer="TEXT")
 
-    add_dxf_text(msp, footer_no, mr - X(1), iy + ih - Y(0.9), Y(1.6), h, align=TextEntityAlignment.RIGHT)
+    if include_guides:
+        draw_dxf_dim_h(msp, 0, w, h, h + 9, f"{w:.1f} mm", h, layer="GUIDE")
+        draw_dxf_dim_v(msp, 0, h, 0, -9, f"{h:.1f} mm", h, layer="GUIDE")
+        if hole_diameter > 0 and (show_left_holes or show_right_holes):
+            draw_dxf_dim_h(msp, 0, hole_offset, 0, -6, f"{hole_offset:.1f} mm", h, layer="GUIDE")
+            draw_dxf_dim_v(msp, 0, hole_offset, 0, -6, f"{hole_offset:.1f} mm", h, layer="GUIDE")
+            add_dxf_text(msp, f"Ø {hole_diameter:.1f} mm", hole_offset + 4.5, hole_offset - 2.0, 2.2, h, layer="GUIDE")
+        add_dxf_text(msp, f"Notranji rob: {border_offset:.1f} mm", w - 3, -6.0, 2.2, h, align=TextEntityAlignment.RIGHT, layer="GUIDE")
 
     stream = io.StringIO()
     doc.write(stream)
     return stream.getvalue().encode("utf-8")
 
 
-# -----------------------------------------------------------------------------
-# Render
-# -----------------------------------------------------------------------------
-svg_content = generate_plate_svg(plate_width, plate_height)
-dxf_content = generate_plate_dxf(plate_width, plate_height)
+preview_svg_content = generate_plate_svg(plate_width, plate_height, show_dims=show_dimensions, for_preview=True)
+export_svg_content = generate_plate_svg(plate_width, plate_height, show_dims=False, for_preview=False)
+dxf_content = generate_plate_dxf(plate_width, plate_height, include_guides=include_guides_in_dxf)
 
 with right_col:
-    st.subheader("Live preview")
-    preview_scale = st.slider("Preview scale", min_value=2.0, max_value=8.0, value=4.8, step=0.2)
-    preview_h = int(plate_height * preview_scale + 60)
+    st.subheader("Predogled")
+    preview_scale = st.slider("Povečava predogleda", min_value=2.0, max_value=8.0, value=4.8, step=0.2)
+    preview_h = int(plate_height * preview_scale + (140 if show_dimensions else 60))
 
     components.html(
         f"""
         <div style="background:#f3f4f6;padding:18px;border-radius:14px;overflow:auto;">
             <div style="display:flex;justify-content:center;">
                 <div style="width:{plate_width * preview_scale}px;">
-                    {svg_content}
+                    {preview_svg_content}
                 </div>
             </div>
         </div>
         """,
-        height=min(max(preview_h, 380), 980),
+        height=min(max(preview_h, 420), 1080),
         scrolling=True,
     )
 
     st.download_button(
-        "Download SVG",
-        data=svg_content,
+        "Prenesi SVG",
+        data=export_svg_content,
         file_name="dafra_rating_plate.svg",
         mime="image/svg+xml",
         use_container_width=True,
     )
-
     st.download_button(
-        "Download DXF",
+        "Prenesi DXF",
         data=dxf_content,
         file_name="dafra_rating_plate.dxf",
         mime="application/dxf",
         use_container_width=True,
     )
 
-    st.info("CE logo is fixed in SVG and DXF. WEEE bin is now crossed and keeps proper aspect ratio.")
+    st.info(
+        "DXF sloji: BORDER, HOLES, TEXT, LOGOS, GUIDE. "
+        "Jezikovni paket privzeto SI / EN / DE. "
+        "Mere so samo v predogledu, razen če posebej vključiš GUIDE layer v DXF."
+    )
 
-    with st.expander("SVG source"):
-        st.code(svg_content[:12000], language="xml")
+    with st.expander("SVG izvor za izvoz"):
+        st.code(export_svg_content[:12000], language="xml")
