@@ -1,5 +1,6 @@
 import io
 import math
+import re
 
 import ezdxf
 from ezdxf.enums import TextEntityAlignment
@@ -37,6 +38,7 @@ DEFAULTS = {
     "footer_no": "507 598.4",
 }
 
+# Official CE logo paths
 CE_PATH_1 = "M110,199.498744A100,100 0 0 1 100,200A100,100 0 0 1 100,0A100,100 0 0 1 110,0.501256L110,30.501256A70,70 0 0 0 100,30A70,70 0 0 0 100,170A70,70 0 0 0 110,169.498744Z"
 CE_PATH_2 = "M280,199.498744A100,100 0 0 1 270,200A100,100 0 0 1 270,0A100,100 0 0 1 280,0.501256L280,30.501256A70,70 0 0 0 270,30A70,70 0 0 0 201.620283,85L260,85L260,115L201.620283,115A70,70 0 0 0 270,170A70,70 0 0 0 280,169.498744Z"
 
@@ -60,7 +62,7 @@ with st.sidebar:
 
     st.header("Marks / logos")
     show_ce_logo = st.checkbox("Show CE logo under lightning", value=True)
-    show_weee_logo = st.checkbox("Show WEEE bin (only if applicable)", value=False)
+    show_bin_logo = st.checkbox("Show WEEE bin (crossed)", value=False)
 
 left_col, right_col = st.columns([1.0, 1.25], gap="large")
 
@@ -91,7 +93,7 @@ with left_col:
         footer_no = st.text_input("Small footer number", value=DEFAULTS["footer_no"])
 
 st.title("CE Marking & Rating Plate Designer")
-st.caption("Haulick-style machine plate with CE logo, optional WEEE mark, and corrected bottom layout.")
+st.caption("Haulick-style machine plate with corrected CE logo, crossed WEEE bin, and SVG/DXF export.")
 
 
 # -----------------------------------------------------------------------------
@@ -200,49 +202,67 @@ def draw_ce_logo_svg(dwg, parent, x, y, w, h):
     tx = x + (w - logo_w) / 2
     ty = y + (h - logo_h) / 2
 
+    grp = dwg.g()
+    grp["style"] = "fill-rule:evenodd;clip-rule:evenodd"
+
     p1 = dwg.path(d=CE_PATH_1, fill="black")
+    p1["fill-rule"] = "evenodd"
+    p1["clip-rule"] = "evenodd"
     p1.update({"transform": f"translate({tx},{ty}) scale({scale})"})
-    parent.add(p1)
+    grp.add(p1)
 
     p2 = dwg.path(d=CE_PATH_2, fill="black")
+    p2["fill-rule"] = "evenodd"
+    p2["clip-rule"] = "evenodd"
     p2.update({"transform": f"translate({tx},{ty}) scale({scale})"})
-    parent.add(p2)
+    grp.add(p2)
+
+    parent.add(grp)
 
 
-def draw_weee_logo_svg(dwg, parent, x, y, w, h):
-    stroke = max(min(w, h) * 0.03, 0.25)
-    cx = x + w / 2
-    y_top = y + h * 0.12
-    body_top = y + h * 0.30
-    body_bottom = y + h * 0.78
-    body_w_top = w * 0.34
-    body_w_bottom = w * 0.26
+def draw_bin_logo_svg(dwg, parent, x, y, w, h):
+    target_ratio = 0.62  # width / height
+    if w / h > target_ratio:
+        bh = h
+        bw = h * target_ratio
+    else:
+        bw = w
+        bh = w / target_ratio
 
-    # lid
-    parent.add(dwg.line((cx - w * 0.18, y_top + h * 0.08), (cx + w * 0.18, y_top + h * 0.08), stroke="black", stroke_width=stroke))
-    parent.add(dwg.line((cx - w * 0.07, y_top), (cx + w * 0.07, y_top), stroke="black", stroke_width=stroke))
+    bx = x + (w - bw) / 2
+    by = y + (h - bh) / 2
 
-    # body
-    p = [
-        (cx - body_w_top / 2, body_top),
-        (cx + body_w_top / 2, body_top),
-        (cx + body_w_bottom / 2, body_bottom),
-        (cx - body_w_bottom / 2, body_bottom),
+    stroke = max(min(bw, bh) * 0.03, 0.22)
+    cx = bx + bw / 2
+
+    lid_y = by + bh * 0.16
+    bar_y = by + bh * 0.22
+    parent.add(dwg.line((cx - bw * 0.19, bar_y), (cx + bw * 0.19, bar_y), stroke="black", stroke_width=stroke))
+    parent.add(dwg.line((cx - bw * 0.07, lid_y), (cx + bw * 0.07, lid_y), stroke="black", stroke_width=stroke))
+
+    top_y = by + bh * 0.30
+    bot_y = by + bh * 0.80
+    top_w = bw * 0.34
+    bot_w = bw * 0.26
+
+    body_pts = [
+        (cx - top_w / 2, top_y),
+        (cx + top_w / 2, top_y),
+        (cx + bot_w / 2, bot_y),
+        (cx - bot_w / 2, bot_y),
     ]
-    parent.add(dwg.polygon(points=p, fill="none", stroke="black", stroke_width=stroke))
+    parent.add(dwg.polygon(points=body_pts, fill="none", stroke="black", stroke_width=stroke))
 
-    # wheels
-    r = w * 0.035
-    parent.add(dwg.circle(center=(cx - w * 0.09, body_bottom + h * 0.05), r=r, fill="none", stroke="black", stroke_width=stroke))
-    parent.add(dwg.circle(center=(cx + w * 0.09, body_bottom + h * 0.05), r=r, fill="none", stroke="black", stroke_width=stroke))
+    r = bw * 0.035
+    parent.add(dwg.circle(center=(cx - bw * 0.09, bot_y + bh * 0.05), r=r, fill="none", stroke="black", stroke_width=stroke))
+    parent.add(dwg.circle(center=(cx + bw * 0.09, bot_y + bh * 0.05), r=r, fill="none", stroke="black", stroke_width=stroke))
 
     # crossed lines
-    parent.add(dwg.line((x + w * 0.18, y + h * 0.12), (x + w * 0.84, y + h * 0.92), stroke="black", stroke_width=stroke))
-    parent.add(dwg.line((x + w * 0.84, y + h * 0.12), (x + w * 0.18, y + h * 0.92), stroke="black", stroke_width=stroke))
+    parent.add(dwg.line((bx + bw * 0.16, by + bh * 0.10), (bx + bw * 0.86, by + bh * 0.92), stroke="black", stroke_width=stroke))
+    parent.add(dwg.line((bx + bw * 0.86, by + bh * 0.10), (bx + bw * 0.16, by + bh * 0.92), stroke="black", stroke_width=stroke))
 
 
-# DXF helpers ---------------------------------------------------------------
-
+# DXF helpers -----------------------------------------------------------------
 def dy(plate_h: float, y_top: float) -> float:
     return plate_h - y_top
 
@@ -289,23 +309,6 @@ def add_dxf_polyline(msp, pts, plate_h, close=False):
     msp.add_lwpolyline(dxf_pts, close=close)
 
 
-def sample_arc_points_screen(cx, cy, r, start_deg, end_deg, steps=36, clockwise=False):
-    if clockwise:
-        if start_deg < end_deg:
-            start_deg += 360.0
-        angles = [start_deg - i * (start_deg - end_deg) / steps for i in range(steps + 1)]
-    else:
-        if end_deg < start_deg:
-            end_deg += 360.0
-        angles = [start_deg + i * (end_deg - start_deg) / steps for i in range(steps + 1)]
-
-    pts = []
-    for a in angles:
-        rad = math.radians(a)
-        pts.append((cx + r * math.cos(rad), cy + r * math.sin(rad)))
-    return pts
-
-
 def draw_warning_symbol_dxf(msp, x, y, w, h, plate_h):
     pts = [
         (x + 0.42 * w, y + 0.10 * h),
@@ -319,6 +322,116 @@ def draw_warning_symbol_dxf(msp, x, y, w, h, plate_h):
     add_dxf_polyline(msp, pts, plate_h, close=True)
 
 
+def tokenize_svg_path(path_d: str):
+    token_re = r"[MLAZ]|[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?"
+    return re.findall(token_re, path_d)
+
+
+def vector_angle(ux, uy, vx, vy):
+    dot = ux * vx + uy * vy
+    det = ux * vy - uy * vx
+    return math.atan2(det, dot)
+
+
+def sample_svg_arc(x1, y1, rx, ry, x_axis_rotation, large_arc_flag, sweep_flag, x2, y2, steps=28):
+    rx = abs(rx)
+    ry = abs(ry)
+
+    if rx == 0 or ry == 0:
+        return [(x2, y2)]
+
+    phi = math.radians(x_axis_rotation % 360.0)
+    cos_phi = math.cos(phi)
+    sin_phi = math.sin(phi)
+
+    dx2 = (x1 - x2) / 2.0
+    dy2 = (y1 - y2) / 2.0
+
+    x1p = cos_phi * dx2 + sin_phi * dy2
+    y1p = -sin_phi * dx2 + cos_phi * dy2
+
+    lam = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry)
+    if lam > 1:
+        s = math.sqrt(lam)
+        rx *= s
+        ry *= s
+
+    num = (rx * rx * ry * ry) - (rx * rx * y1p * y1p) - (ry * ry * x1p * x1p)
+    den = (rx * rx * y1p * y1p) + (ry * ry * x1p * x1p)
+    coef = 0.0 if den == 0 else math.sqrt(max(0.0, num / den))
+    if large_arc_flag == sweep_flag:
+        coef = -coef
+
+    cxp = coef * ((rx * y1p) / ry)
+    cyp = coef * (-(ry * x1p) / rx)
+
+    cx = cos_phi * cxp - sin_phi * cyp + (x1 + x2) / 2.0
+    cy = sin_phi * cxp + cos_phi * cyp + (y1 + y2) / 2.0
+
+    ux = (x1p - cxp) / rx
+    uy = (y1p - cyp) / ry
+    vx = (-x1p - cxp) / rx
+    vy = (-y1p - cyp) / ry
+
+    theta1 = vector_angle(1.0, 0.0, ux, uy)
+    delta_theta = vector_angle(ux, uy, vx, vy)
+
+    if (not sweep_flag) and delta_theta > 0:
+        delta_theta -= 2.0 * math.pi
+    elif sweep_flag and delta_theta < 0:
+        delta_theta += 2.0 * math.pi
+
+    pts = []
+    for i in range(1, steps + 1):
+        t = theta1 + delta_theta * (i / steps)
+        ct = math.cos(t)
+        st = math.sin(t)
+        x = cos_phi * rx * ct - sin_phi * ry * st + cx
+        y = sin_phi * rx * ct + cos_phi * ry * st + cy
+        pts.append((x, y))
+    return pts
+
+
+def svg_path_to_points(path_d: str, tx=0.0, ty=0.0, scale=1.0, arc_steps=28):
+    tokens = tokenize_svg_path(path_d)
+    i = 0
+    cmd = None
+    x = y = 0.0
+    start_x = start_y = 0.0
+    pts = []
+
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok in ("M", "L", "A", "Z"):
+            cmd = tok
+            i += 1
+
+        if cmd == "M":
+            x = float(tokens[i]); y = float(tokens[i + 1]); i += 2
+            start_x, start_y = x, y
+            pts.append((tx + x * scale, ty + y * scale))
+            cmd = "L"
+        elif cmd == "L":
+            x = float(tokens[i]); y = float(tokens[i + 1]); i += 2
+            pts.append((tx + x * scale, ty + y * scale))
+        elif cmd == "A":
+            rx = float(tokens[i]); ry = float(tokens[i + 1]); xrot = float(tokens[i + 2])
+            large_arc = int(float(tokens[i + 3])); sweep = int(float(tokens[i + 4]))
+            x2 = float(tokens[i + 5]); y2 = float(tokens[i + 6]); i += 7
+
+            arc_pts = sample_svg_arc(x, y, rx, ry, xrot, large_arc, sweep, x2, y2, steps=arc_steps)
+            for ax, ay in arc_pts:
+                pts.append((tx + ax * scale, ty + ay * scale))
+            x, y = x2, y2
+        elif cmd == "Z":
+            # close handled by polyline close=True
+            cmd = None
+        else:
+            break
+
+    return pts
+
+
 def draw_ce_logo_dxf(msp, x, y, w, h, plate_h):
     scale = min(w / 280.0, h / 200.0)
     logo_w = 280.0 * scale
@@ -326,81 +439,51 @@ def draw_ce_logo_dxf(msp, x, y, w, h, plate_h):
     tx = x + (w - logo_w) / 2
     ty = y + (h - logo_h) / 2
 
-    # C
-    c_cx = tx + 100 * scale
-    c_cy = ty + 100 * scale
-    add_dxf_polyline(
-        msp,
-        sample_arc_points_screen(c_cx, c_cy, 100 * scale, 84.2608, 275.7392, steps=44, clockwise=False),
-        plate_h,
-        close=False,
-    )
-    add_dxf_polyline(
-        msp,
-        sample_arc_points_screen(c_cx, c_cy, 70 * scale, 278.1986, 81.8014, steps=40, clockwise=True),
-        plate_h,
-        close=False,
-    )
-    add_dxf_line(msp, tx + 110 * scale, ty + 0.501256 * scale, tx + 110 * scale, ty + 30.501256 * scale, plate_h)
-    add_dxf_line(msp, tx + 110 * scale, ty + 199.498744 * scale, tx + 110 * scale, ty + 169.498744 * scale, plate_h)
+    pts1 = svg_path_to_points(CE_PATH_1, tx=tx, ty=ty, scale=scale, arc_steps=36)
+    pts2 = svg_path_to_points(CE_PATH_2, tx=tx, ty=ty, scale=scale, arc_steps=36)
 
-    # E outer
-    e_cx = tx + 270 * scale
-    e_cy = ty + 100 * scale
-    add_dxf_polyline(
-        msp,
-        sample_arc_points_screen(e_cx, e_cy, 100 * scale, 278.1986, 81.8014, steps=44, clockwise=False),
-        plate_h,
-        close=False,
-    )
-    add_dxf_line(msp, tx + 280 * scale, ty + 0.501256 * scale, tx + 280 * scale, ty + 30.501256 * scale, plate_h)
-    add_dxf_line(msp, tx + 280 * scale, ty + 169.498744 * scale, tx + 280 * scale, ty + 199.498744 * scale, plate_h)
-
-    # E inner upper curve
-    add_dxf_polyline(
-        msp,
-        sample_arc_points_screen(e_cx, e_cy, 70 * scale, 278.1986, 192.3650, steps=24, clockwise=True),
-        plate_h,
-        close=False,
-    )
-    # middle bar
-    add_dxf_line(msp, tx + 201.620283 * scale, ty + 85 * scale, tx + 260 * scale, ty + 85 * scale, plate_h)
-    add_dxf_line(msp, tx + 260 * scale, ty + 85 * scale, tx + 260 * scale, ty + 115 * scale, plate_h)
-    add_dxf_line(msp, tx + 260 * scale, ty + 115 * scale, tx + 201.620283 * scale, ty + 115 * scale, plate_h)
-
-    # E inner lower curve
-    add_dxf_polyline(
-        msp,
-        sample_arc_points_screen(e_cx, e_cy, 70 * scale, 167.6350, 81.8014, steps=24, clockwise=True),
-        plate_h,
-        close=False,
-    )
+    add_dxf_polyline(msp, pts1, plate_h, close=True)
+    add_dxf_polyline(msp, pts2, plate_h, close=True)
 
 
-def draw_weee_logo_dxf(msp, x, y, w, h, plate_h):
-    cx = x + w / 2
-    y_top = y + h * 0.12
-    body_top = y + h * 0.30
-    body_bottom = y + h * 0.78
-    body_w_top = w * 0.34
-    body_w_bottom = w * 0.26
+def draw_bin_logo_dxf(msp, x, y, w, h, plate_h):
+    target_ratio = 0.62
+    if w / h > target_ratio:
+        bh = h
+        bw = h * target_ratio
+    else:
+        bw = w
+        bh = w / target_ratio
 
-    # lid
-    add_dxf_line(msp, cx - w * 0.18, y_top + h * 0.08, cx + w * 0.18, y_top + h * 0.08, plate_h)
-    add_dxf_line(msp, cx - w * 0.07, y_top, cx + w * 0.07, y_top, plate_h)
+    bx = x + (w - bw) / 2
+    by = y + (h - bh) / 2
+    cx = bx + bw / 2
 
-    # body
-    p = [
-        (cx - body_w_top / 2, body_top),
-        (cx + body_w_top / 2, body_top),
-        (cx + body_w_bottom / 2, body_bottom),
-        (cx - body_w_bottom / 2, body_bottom),
+    lid_y = by + bh * 0.16
+    bar_y = by + bh * 0.22
+    add_dxf_line(msp, cx - bw * 0.19, bar_y, cx + bw * 0.19, bar_y, plate_h)
+    add_dxf_line(msp, cx - bw * 0.07, lid_y, cx + bw * 0.07, lid_y, plate_h)
+
+    top_y = by + bh * 0.30
+    bot_y = by + bh * 0.80
+    top_w = bw * 0.34
+    bot_w = bw * 0.26
+
+    body_pts = [
+        (cx - top_w / 2, top_y),
+        (cx + top_w / 2, top_y),
+        (cx + bot_w / 2, bot_y),
+        (cx - bot_w / 2, bot_y),
     ]
-    add_dxf_polyline(msp, p, plate_h, close=True)
+    add_dxf_polyline(msp, body_pts, plate_h, close=True)
+
+    r = bw * 0.035
+    msp.add_circle((cx - bw * 0.09, dy(plate_h, bot_y + bh * 0.05)), r)
+    msp.add_circle((cx + bw * 0.09, dy(plate_h, bot_y + bh * 0.05)), r)
 
     # crossed lines
-    add_dxf_line(msp, x + w * 0.18, y + h * 0.12, x + w * 0.84, y + h * 0.92, plate_h)
-    add_dxf_line(msp, x + w * 0.84, y + h * 0.12, x + w * 0.18, y + h * 0.92, plate_h)
+    add_dxf_line(msp, bx + bw * 0.16, by + bh * 0.10, bx + bw * 0.86, by + bh * 0.92, plate_h)
+    add_dxf_line(msp, bx + bw * 0.86, by + bh * 0.10, bx + bw * 0.16, by + bh * 0.92, plate_h)
 
 
 # -----------------------------------------------------------------------------
@@ -471,7 +554,7 @@ def generate_plate_svg(w: float, h: float) -> str:
     zone_w = panel_w - 2 * pad
     zone_h = ih - Y(12)
 
-    if show_ce_logo or show_weee_logo:
+    if show_ce_logo or show_bin_logo:
         lightning_h = zone_h * 0.56
     else:
         lightning_h = zone_h * 0.78
@@ -486,9 +569,9 @@ def generate_plate_svg(w: float, h: float) -> str:
         draw_ce_logo_svg(dwg, content, zone_x + zone_w * 0.06, logo_y, zone_w * 0.88, ce_h)
         logo_y += ce_h + Y(3)
 
-    if show_weee_logo:
-        weee_h = Y(12)
-        draw_weee_logo_svg(dwg, content, zone_x + zone_w * 0.18, logo_y, zone_w * 0.64, weee_h)
+    if show_bin_logo:
+        bin_h = Y(12)
+        draw_bin_logo_svg(dwg, content, zone_x + zone_w * 0.18, logo_y, zone_w * 0.64, bin_h)
 
     # Main area
     mx = ix + panel_w + X(4)
@@ -533,7 +616,6 @@ def generate_plate_svg(w: float, h: float) -> str:
     y8 = my + Y(106.5)
     y9 = my + Y(118.0)
 
-    # Row 1
     draw_svg_text(dwg, content, "Type", label_x, y1, small_font, weight="bold")
     draw_box_svg(dwg, content, box1_x, y1 - box_h / 2, box1_w, box_h)
     draw_svg_box_text(dwg, content, type_text, box1_x, y1 - box_h / 2, box1_w, box_h, value_font)
@@ -542,7 +624,6 @@ def generate_plate_svg(w: float, h: float) -> str:
     draw_box_svg(dwg, content, box2_x, y1 - box_h / 2, box2_w, box_h)
     draw_svg_box_text(dwg, content, no_text, box2_x, y1 - box_h / 2, box2_w, box_h, value_font)
 
-    # Row 2
     draw_svg_multiline(
         dwg,
         content,
@@ -558,7 +639,6 @@ def generate_plate_svg(w: float, h: float) -> str:
     draw_box_svg(dwg, content, year_box2_x, y2 - box_h / 2, year_box_w, box_h)
     draw_svg_box_text(dwg, content, year_refurbished, year_box2_x, y2 - box_h / 2, year_box_w, box_h, value_font)
 
-    # Row 3
     draw_svg_multiline(dwg, content, ["Stromart", "Current", "Nature du courant"], label_x, y3, small_font, line_gap)
     draw_box_svg(dwg, content, box1_x, y3 - box_h / 2, box1_w, box_h)
     draw_svg_box_text(dwg, content, current_type, box1_x, y3 - box_h / 2, box1_w, box_h, value_font)
@@ -567,13 +647,11 @@ def generate_plate_svg(w: float, h: float) -> str:
     draw_box_svg(dwg, content, box2_x, y3 - box_h / 2, box2_w, box_h)
     draw_svg_box_text(dwg, content, hz_text, box2_x, y3 - box_h / 2, box2_w, box_h, value_font)
 
-    # Row 4
     draw_svg_multiline(dwg, content, ["Betriebsspannung", "Working voltage", "Voltage de service"], label_x, y4, small_font, line_gap)
     draw_svg_text(dwg, content, "V", unit_x, y4, small_font, weight="bold")
     draw_box_svg(dwg, content, single_box_x, y4 - box_h / 2, single_box_w, box_h)
     draw_svg_box_text(dwg, content, working_voltage, single_box_x, y4 - box_h / 2, single_box_w, box_h, value_font)
 
-    # Row 5
     draw_svg_multiline(
         dwg,
         content,
@@ -587,7 +665,6 @@ def generate_plate_svg(w: float, h: float) -> str:
     draw_box_svg(dwg, content, single_box_x, y5 - box_h / 2, single_box_w, box_h)
     draw_svg_box_text(dwg, content, air_pressure, single_box_x, y5 - box_h / 2, single_box_w, box_h, value_font)
 
-    # Row 6
     draw_svg_multiline(dwg, content, ["Steuerspannung", "Controlling voltage", "Voltage de commande"], label_x, y6, small_font, line_gap)
     draw_svg_text(dwg, content, "V", unit_x, y6, small_font, weight="bold")
     draw_box_svg(dwg, content, single_box_x, y6 - box_h / 2, single_box_w, box_h)
@@ -596,19 +673,16 @@ def generate_plate_svg(w: float, h: float) -> str:
     draw_box_svg(dwg, content, single_box_x, y6b - box_h / 2, single_box_w, box_h)
     draw_svg_box_text(dwg, content, f"{control_voltage_ac} ~", single_box_x, y6b - box_h / 2, single_box_w, box_h, value_font)
 
-    # Row 7
     draw_svg_multiline(dwg, content, ["Maschine Nennstrom", "Nominal current machine", "Machine intensité nominale"], label_x, y7, small_font, line_gap)
     draw_svg_text(dwg, content, "A", unit_x, y7, small_font, weight="bold")
     draw_box_svg(dwg, content, single_box_x, y7 - box_h / 2, single_box_w, box_h)
     draw_svg_box_text(dwg, content, machine_current, single_box_x, y7 - box_h / 2, single_box_w, box_h, value_font)
 
-    # Row 8
     draw_svg_multiline(dwg, content, ["Sicherungs-Nennstrom", "Nominal current fuses", "Intensité de protection nominale"], label_x, y8, small_font, line_gap)
     draw_svg_text(dwg, content, "A", unit_x, y8, small_font, weight="bold")
     draw_box_svg(dwg, content, single_box_x, y8 - box_h / 2, single_box_w, box_h)
     draw_svg_box_text(dwg, content, fuse_current, single_box_x, y8 - box_h / 2, single_box_w, box_h, value_font)
 
-    # Row 9
     draw_svg_multiline(dwg, content, ["Schaltplan", "Schematic", "Schéma de connexions"], label_x, y9, small_font, line_gap)
     draw_svg_text(dwg, content, "No.", unit_x - X(6), y9, small_font, weight="bold")
     schematic_x = single_box_x - X(12)
@@ -616,12 +690,10 @@ def generate_plate_svg(w: float, h: float) -> str:
     draw_box_svg(dwg, content, schematic_x, y9 - box_h / 2, schematic_w, box_h)
     draw_svg_box_text(dwg, content, schematic_no, schematic_x, y9 - box_h / 2, schematic_w, box_h, value_font)
 
-    # Bottom box - corrected spacing
     bottom_box_h = Y(3.4)
     bottom_box_y = iy + ih - Y(7.6)
     draw_box_svg(dwg, content, mx + X(4), bottom_box_y, main_w - X(6), bottom_box_h)
 
-    # Footer
     draw_svg_text(dwg, content, footer_no, mr - X(1), iy + ih - Y(0.9), Y(1.8), anchor="end")
 
     return dwg.tostring()
@@ -662,7 +734,6 @@ def generate_plate_dxf(w: float, h: float) -> bytes:
     iw = w - 2 * border_offset
     ih = h - 2 * border_offset
 
-    # Left symbol panel
     panel_w = X(44)
     add_dxf_line(msp, ix + panel_w, iy, ix + panel_w, iy + ih, h)
 
@@ -672,7 +743,7 @@ def generate_plate_dxf(w: float, h: float) -> bytes:
     zone_w = panel_w - 2 * pad
     zone_h = ih - Y(12)
 
-    if show_ce_logo or show_weee_logo:
+    if show_ce_logo or show_bin_logo:
         lightning_h = zone_h * 0.56
     else:
         lightning_h = zone_h * 0.78
@@ -687,11 +758,10 @@ def generate_plate_dxf(w: float, h: float) -> bytes:
         draw_ce_logo_dxf(msp, zone_x + zone_w * 0.06, logo_y, zone_w * 0.88, ce_h, h)
         logo_y += ce_h + Y(3)
 
-    if show_weee_logo:
-        weee_h = Y(12)
-        draw_weee_logo_dxf(msp, zone_x + zone_w * 0.18, logo_y, zone_w * 0.64, weee_h, h)
+    if show_bin_logo:
+        bin_h = Y(12)
+        draw_bin_logo_dxf(msp, zone_x + zone_w * 0.18, logo_y, zone_w * 0.64, bin_h, h)
 
-    # Main area
     mx = ix + panel_w + X(4)
     my = iy + Y(2.5)
     mr = ix + iw - X(4)
@@ -734,7 +804,6 @@ def generate_plate_dxf(w: float, h: float) -> bytes:
     y8 = my + Y(106.5)
     y9 = my + Y(118.0)
 
-    # Row 1
     add_dxf_text(msp, "Type", label_x, y1, small_font, h)
     add_dxf_rect(msp, box1_x, y1 - box_h / 2, box1_w, box_h, h)
     add_dxf_box_text(msp, type_text, box1_x, y1 - box_h / 2, box1_w, box_h, value_font, h)
@@ -743,7 +812,6 @@ def generate_plate_dxf(w: float, h: float) -> bytes:
     add_dxf_rect(msp, box2_x, y1 - box_h / 2, box2_w, box_h, h)
     add_dxf_box_text(msp, no_text, box2_x, y1 - box_h / 2, box2_w, box_h, value_font, h)
 
-    # Row 2
     add_dxf_multiline(
         msp,
         ["Baujahr / Jahr der Überholung", "Year built / Year refurbished", "Année de fabrication / Année de rénovation"],
@@ -759,7 +827,6 @@ def generate_plate_dxf(w: float, h: float) -> bytes:
     add_dxf_rect(msp, year_box2_x, y2 - box_h / 2, year_box_w, box_h, h)
     add_dxf_box_text(msp, year_refurbished, year_box2_x, y2 - box_h / 2, year_box_w, box_h, value_font, h)
 
-    # Row 3
     add_dxf_multiline(msp, ["Stromart", "Current", "Nature du courant"], label_x, y3, small_font, line_gap, h)
     add_dxf_rect(msp, box1_x, y3 - box_h / 2, box1_w, box_h, h)
     add_dxf_box_text(msp, current_type, box1_x, y3 - box_h / 2, box1_w, box_h, value_font, h)
@@ -768,13 +835,11 @@ def generate_plate_dxf(w: float, h: float) -> bytes:
     add_dxf_rect(msp, box2_x, y3 - box_h / 2, box2_w, box_h, h)
     add_dxf_box_text(msp, hz_text, box2_x, y3 - box_h / 2, box2_w, box_h, value_font, h)
 
-    # Row 4
     add_dxf_multiline(msp, ["Betriebsspannung", "Working voltage", "Voltage de service"], label_x, y4, small_font, line_gap, h)
     add_dxf_text(msp, "V", unit_x, y4, small_font, h)
     add_dxf_rect(msp, single_box_x, y4 - box_h / 2, single_box_w, box_h, h)
     add_dxf_box_text(msp, working_voltage, single_box_x, y4 - box_h / 2, single_box_w, box_h, value_font, h)
 
-    # Row 5
     add_dxf_multiline(
         msp,
         ["Betriebsdruck Druckluft", "Compressed air pressure", "Pression d'air comprimé"],
@@ -788,7 +853,6 @@ def generate_plate_dxf(w: float, h: float) -> bytes:
     add_dxf_rect(msp, single_box_x, y5 - box_h / 2, single_box_w, box_h, h)
     add_dxf_box_text(msp, air_pressure, single_box_x, y5 - box_h / 2, single_box_w, box_h, value_font, h)
 
-    # Row 6
     add_dxf_multiline(msp, ["Steuerspannung", "Controlling voltage", "Voltage de commande"], label_x, y6, small_font, line_gap, h)
     add_dxf_text(msp, "V", unit_x, y6, small_font, h)
     add_dxf_rect(msp, single_box_x, y6 - box_h / 2, single_box_w, box_h, h)
@@ -797,19 +861,16 @@ def generate_plate_dxf(w: float, h: float) -> bytes:
     add_dxf_rect(msp, single_box_x, y6b - box_h / 2, single_box_w, box_h, h)
     add_dxf_box_text(msp, f"{control_voltage_ac} ~", single_box_x, y6b - box_h / 2, single_box_w, box_h, value_font, h)
 
-    # Row 7
     add_dxf_multiline(msp, ["Maschine Nennstrom", "Nominal current machine", "Machine intensité nominale"], label_x, y7, small_font, line_gap, h)
     add_dxf_text(msp, "A", unit_x, y7, small_font, h)
     add_dxf_rect(msp, single_box_x, y7 - box_h / 2, single_box_w, box_h, h)
     add_dxf_box_text(msp, machine_current, single_box_x, y7 - box_h / 2, single_box_w, box_h, value_font, h)
 
-    # Row 8
     add_dxf_multiline(msp, ["Sicherungs-Nennstrom", "Nominal current fuses", "Intensité de protection nominale"], label_x, y8, small_font, line_gap, h)
     add_dxf_text(msp, "A", unit_x, y8, small_font, h)
     add_dxf_rect(msp, single_box_x, y8 - box_h / 2, single_box_w, box_h, h)
     add_dxf_box_text(msp, fuse_current, single_box_x, y8 - box_h / 2, single_box_w, box_h, value_font, h)
 
-    # Row 9
     add_dxf_multiline(msp, ["Schaltplan", "Schematic", "Schéma de connexions"], label_x, y9, small_font, line_gap, h)
     add_dxf_text(msp, "No.", unit_x - X(6), y9, small_font, h)
     schematic_x = single_box_x - X(12)
@@ -817,7 +878,6 @@ def generate_plate_dxf(w: float, h: float) -> bytes:
     add_dxf_rect(msp, schematic_x, y9 - box_h / 2, schematic_w, box_h, h)
     add_dxf_box_text(msp, schematic_no, schematic_x, y9 - box_h / 2, schematic_w, box_h, value_font, h)
 
-    # Bottom box - corrected spacing
     bottom_box_h = Y(3.4)
     bottom_box_y = iy + ih - Y(7.6)
     add_dxf_rect(msp, mx + X(4), bottom_box_y, main_w - X(6), bottom_box_h, h)
@@ -829,6 +889,9 @@ def generate_plate_dxf(w: float, h: float) -> bytes:
     return stream.getvalue().encode("utf-8")
 
 
+# -----------------------------------------------------------------------------
+# Render
+# -----------------------------------------------------------------------------
 svg_content = generate_plate_svg(plate_width, plate_height)
 dxf_content = generate_plate_dxf(plate_width, plate_height)
 
@@ -867,6 +930,7 @@ with right_col:
         use_container_width=True,
     )
 
-    st.info(
-        "CE logo is enabled by default. WEEE is optional and should only be used if the finished product is actually in WEEE scope."
-    )
+    st.info("CE logo is fixed in SVG and DXF. WEEE bin is now crossed and keeps proper aspect ratio.")
+
+    with st.expander("SVG source"):
+        st.code(svg_content[:12000], language="xml")
