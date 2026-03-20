@@ -3,3 +3,4 @@ ezdxf
 matplotlib
 pandas
 openpyxl
+svgwrite
