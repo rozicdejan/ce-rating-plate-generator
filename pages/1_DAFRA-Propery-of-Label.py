@@ -405,7 +405,7 @@ def fit_text_block(
     if not raw_original:
         return empty
 
-    single_final, single_base, _, single_scale, single_used_h = fit_text_for_box(
+    single_final, single_base, single_bbox, single_scale, single_used_h = fit_text_for_box(
         raw_single, desired_h_mm, box_w, box_h, weight
     )
     single_complete = single_final == raw_single
@@ -420,11 +420,19 @@ def fit_text_block(
         "score": (1000 if single_complete else 0) + single_used_h * 100 + len(single_final),
     }
 
-    # Only attempt 2-line wrap if the single-line result was truncated or
-    # required heavy downscaling. When force_single_if_fits=True, a complete
-    # single-line fit wins unconditionally — prevents short strings like
-    # "Husqvarna AB" from splitting just because 2-line scores higher.
-    if not (force_single_if_fits and single_complete) and max_lines >= 2 and box_h >= (MIN_TEXT_HEIGHT_MM * 2 + MULTILINE_GAP_MM):
+    # Detect whether text genuinely fits within the box width at the desired
+    # height — direct overflow check, no heuristics.
+    # width_at_desired_h = how wide the text would be at full desired height.
+    # If it exceeds box_w the text overflows the label → must wrap to 2 lines.
+    # "Husqvarna AB"                   → 20.6 mm < 42.1 mm → stays single ✓
+    # "Dafra kontakt tehnologija d.o.o." → 45.2 mm > 42.1 mm → wraps ✓
+    if force_single_if_fits and single_complete and single_bbox is not None:
+        width_at_desired_h = single_bbox.width * (desired_h_mm / single_bbox.height)
+        single_truly_fits = width_at_desired_h <= box_w
+    else:
+        single_truly_fits = False
+
+    if not (force_single_if_fits and single_truly_fits) and max_lines >= 2 and box_h >= (MIN_TEXT_HEIGHT_MM * 2 + MULTILINE_GAP_MM):
         gap = min(MULTILINE_GAP_MM, max(0.25, box_h * 0.08))
         line_box_h = (box_h - gap) / 2.0
 
