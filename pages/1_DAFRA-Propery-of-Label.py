@@ -664,12 +664,21 @@ def fit_text_block(
 
     paths, line_boxes = [], []
     if len(best["texts"]) == 1:
+        # When the box was extended to allow 2-line wrapping but the text fits on one
+        # line (force_single_if_fits), we must centre within the ANCHOR height (= row
+        # height), not within the full extended box.  Without this, "Property of:" value
+        # centres in 5.0 mm while its label centres in 4.2 mm → 0.4 mm vertical offset.
+        centering_h = (
+            first_line_anchor_h
+            if (force_single_if_fits and first_line_anchor_h is not None)
+            else box_h
+        )
         placed = (place_path_in_box(best["bases"][0], best["scales"][0],
-                                    box_x, box_y, box_w, box_h, align=align, pad_x=pad_x)
+                                    box_x, box_y, box_w, centering_h, align=align, pad_x=pad_x)
                   if best["bases"][0] is not None else None)
         if placed is not None:
             paths.append(placed)
-        line_boxes.append((box_x, box_y, box_w, box_h))
+        line_boxes.append((box_x, box_y, box_w, centering_h))
         used_h = best["used_heights"][0] if best["used_heights"] else 0.0
     else:
         h1, h2, gap = best["used_heights"][0], best["used_heights"][1], best["gap"]
