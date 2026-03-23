@@ -2,6 +2,7 @@ import io
 import re
 import html
 import zipfile
+import unicodedata
 from collections import Counter
 
 import pandas as pd
@@ -62,6 +63,25 @@ VECTOR_FONT_FAMILY = "DejaVu Sans Condensed"
 
 ALLOWED_MODES = ["Normal", "Anodized aluminium (negative)"]
 
+CUSTOM_REQUIRED_ALIASES = {
+    "part_description": ["izdelek", "part_description", "izdelek_2"],
+    "tool_number": ["orodje", "sifra_orodja", "orodje_sifra", "tool_number"],
+    "property_of": ["lastnik", "lastnik_orodja", "property_of"],
+}
+
+CUSTOM_OPTIONAL_DISPLAY = [
+    "skladisce",
+    "orodje",
+    "racun",
+    "napis_na",
+    "sifra_orodja",
+    "os_elrad",
+    "slika",
+    "lastnik",
+    "kupec",
+    "avtor_uros_stuklek_odjemalec",
+]
+
 # ------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------
@@ -76,6 +96,29 @@ def safe_filename(text: str) -> str:
 
 def escape_xml(text: str) -> str:
     return html.escape(text or "", quote=False)
+
+
+def slugify_text(text) -> str:
+    text = "" if text is None or pd.isna(text) else str(text)
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.replace("\n", " ").replace("/", " ")
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9]+", "_", text)
+    return text.strip("_")
+
+
+def make_unique_strings(values):
+    counts = {}
+    result = []
+    for v in values:
+        base = v if v else "col"
+        counts[base] = counts.get(base, 0) + 1
+        if counts[base] == 1:
+            result.append(base)
+        else:
+            result.append(f"{base}_{counts[base]}")
+    return result
 
 
 def get_mode_colors(mode: str):
@@ -219,10 +262,7 @@ def row_box(top_y, height):
 
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
-    df.columns = [
-        str(c).strip().lower().replace(" ", "_").replace("-", "_")
-        for c in df.columns
-    ]
+    df.columns = [slugify_text(c) for c in df.columns]
     return df
 
 
@@ -257,10 +297,18 @@ def parse_optional_float(value, default_value):
 def load_tabular_file(uploaded_file):
     name = uploaded_file.name.lower()
     if name.endswith(".csv"):
+        uploaded_file.seek(0)
         return pd.read_csv(uploaded_file)
     if name.endswith(".xlsx") or name.endswith(".xls"):
-        return pd.read_excel(uploaded_file)
-    raise ValueError("Unsupported file type. Use CSV or XLSX.")
+        try:
+            uploaded_file.seek(0)
+            return pd.read_excel(uploaded_file)
+        except Exception:
+            uploaded_file.seek(0)
+            if name.endswith(".xls"):
+                return pd.read_excel(uploaded_file, engine="xlrd")
+            return pd.read_excel(uploaded_file, engine="openpyxl")
+    raise ValueError("Unsupported file type. Use CSV or XLSX/XLS.")
 
 
 def make_unique_base_names(names):
@@ -280,9 +328,196 @@ def make_preview_svg(svg_text: str, label_w_mm: float, label_h_mm: float, px_per
     preview_h_px = label_h_mm * px_per_mm
 
     svg_preview = re.sub(r'width="[^"]+"', f'width="{preview_w_px}px"', svg_text, count=1)
-    svg_preview = re.sub(r'height="[^"]+"', f'height="{preview_h_px}px"', svg_preview, count=1)
+    svg_preview = re.sub(r'height="[^"]+"', f'height="{preview_h_px}px"', svg_text, count=1)
 
     return svg_preview
+
+
+def highlight_selected_rows(row):
+    if bool(row.get("print", False)):
+        return ["background-color: rgba(56, 189, 248, 0.18);"] * len(row)
+    return [""] * len(row)
+
+
+def selection_editor(
+    df: pd.DataFrame,
+    key: str,
+    display_columns: list[str],
+    checkbox_label: str = "Print",
+):
+    work_df = df.copy()
+    if "print" not in work_df.columns:
+        work_df.insert(0, "print", False)
+
+    column_order = ["print"] + [c for c in display_columns if c in work_df.columns]
+    edited_df = st.data_editor(
+        work_df[column_order],
+        key=key,
+        hide_index=True,
+        use_container_width=True,
+        num_rows="fixed",
+        disabled=[c for c in column_order if c != "print"],
+        column_config={
+            "print": st.column_config.CheckboxColumn(
+                checkbox_label,
+                help="Select rows for SVG + DXF export",
+                default=False,
+            )
+        },
+    )
+    return edited_df
+
+
+def render_svg_preview_card(svg_output: str, mode: str, preview_scale: float):
+    colors = get_mode_colors(mode)
+    preview_svg = make_preview_svg(svg_output, LABEL_W, LABEL_H, preview_scale)
+    preview_height = int(LABEL_H * preview_scale + 80)
+
+    preview_html = f"""
+    <div style="
+        background:{colors['preview_bg']};
+        padding:20px;
+        border-radius:12px;
+        border:1px solid #d0d0d0;
+        min-height:{preview_height}px;
+        display:flex;
+        justify-content:center;
+        align-items:center;
+        overflow:auto;">
+        <div style="padding:10px; border-radius:10px;">
+            {preview_svg}
+        </div>
+    </div>
+    """
+    components.html(preview_html, height=preview_height + 40)
+
+
+# ------------------------------------------------------------
+# Custom Excel helpers
+# ------------------------------------------------------------
+def _score_custom_header_block(raw_df: pd.DataFrame, start_row: int) -> int:
+    parts = []
+    for r in range(start_row, min(start_row + 3, len(raw_df))):
+        row_vals = [str(v) for v in raw_df.iloc[r].tolist() if pd.notna(v)]
+        parts.extend(row_vals)
+
+    text = slugify_text(" ".join(parts))
+
+    score = 0
+    if "izdelek" in text:
+        score += 3
+    if "orodje" in text and "sifra" in text:
+        score += 4
+    if "lastnik" in text:
+        score += 3
+    if "seznam_orodij" in text:
+        score -= 2
+    return score
+
+
+def find_custom_excel_sheet_and_header(uploaded_file):
+    uploaded_file.seek(0)
+    xls = pd.ExcelFile(uploaded_file)
+
+    best_sheet = None
+    best_row = None
+    best_score = -10**9
+
+    for sheet in xls.sheet_names:
+        raw_df = pd.read_excel(xls, sheet_name=sheet, header=None)
+        if raw_df.empty:
+            continue
+
+        max_scan = min(20, len(raw_df))
+        for start_row in range(max_scan):
+            score = _score_custom_header_block(raw_df, start_row)
+            if score > best_score:
+                best_score = score
+                best_sheet = sheet
+                best_row = start_row
+
+    if best_sheet is None or best_row is None or best_score < 6:
+        raise ValueError("Could not detect the custom Excel header row.")
+    return best_sheet, best_row
+
+
+def combine_multirow_headers(raw_df: pd.DataFrame, header_row: int, depth: int = 3) -> list[str]:
+    headers = []
+    for col_idx in range(raw_df.shape[1]):
+        parts = []
+        for r in range(header_row, min(header_row + depth, len(raw_df))):
+            value = raw_df.iloc[r, col_idx]
+            if pd.notna(value):
+                text = str(value).strip()
+                if text and text.lower() != "nan":
+                    parts.append(text)
+
+        headers.append(slugify_text(" ".join(parts)))
+
+    return make_unique_strings(headers)
+
+
+def pick_first_existing_column(columns, aliases):
+    for alias in aliases:
+        if alias in columns:
+            return alias
+    return None
+
+
+def normalize_custom_template_df(data_df: pd.DataFrame) -> pd.DataFrame:
+    df = data_df.copy()
+
+    resolved = {}
+    for target_col, aliases in CUSTOM_REQUIRED_ALIASES.items():
+        source_col = pick_first_existing_column(df.columns, aliases)
+        if source_col is None:
+            raise ValueError(
+                f"Could not find source column for '{target_col}'. "
+                f"Tried: {', '.join(aliases)}. "
+                f"Available columns: {', '.join([str(c) for c in df.columns])}"
+            )
+        resolved[target_col] = source_col
+
+    for target_col, source_col in resolved.items():
+        df[target_col] = df[source_col].fillna("").astype(str).str.strip()
+
+    df = df[
+        ~(
+            (df["tool_number"] == "")
+            & (df["property_of"] == "")
+            & (df["part_description"] == "")
+        )
+    ].copy()
+
+    df["mode"] = DEFAULT_MODE
+    df["hole_dia"] = DEFAULT_HOLE_DIA
+    df["hole_offset"] = DEFAULT_HOLE_OFFSET
+
+    return df
+
+
+def load_custom_tool_excel(uploaded_file) -> pd.DataFrame:
+    uploaded_file.seek(0)
+    sheet_name, header_row = find_custom_excel_sheet_and_header(uploaded_file)
+
+    uploaded_file.seek(0)
+    raw_df = pd.read_excel(uploaded_file, sheet_name=sheet_name, header=None)
+
+    headers = combine_multirow_headers(raw_df, header_row, depth=3)
+    data_start = header_row + 3
+
+    data_df = raw_df.iloc[data_start:].copy()
+    data_df.columns = headers
+    data_df = data_df.dropna(how="all").reset_index(drop=True)
+    data_df.insert(0, "excel_row", range(data_start + 1, data_start + 1 + len(data_df)))
+
+    data_df = normalize_custom_template_df(data_df)
+
+    # lower Excel rows = higher priority
+    data_df = data_df.iloc[::-1].reset_index(drop=True)
+    data_df.insert(0, "priority", range(1, len(data_df) + 1))
+
+    return data_df
 
 
 # ------------------------------------------------------------
@@ -556,7 +791,7 @@ def generate_dxf(
 
 
 # ------------------------------------------------------------
-# ZIP generation for batch
+# ZIP generation
 # ------------------------------------------------------------
 def build_batch_zip(
     df: pd.DataFrame,
@@ -575,6 +810,8 @@ def build_batch_zip(
     fs2: float,
     fs3: float,
     show_border: bool,
+    include_svg: bool = True,
+    include_dxf: bool = True,
 ):
     required = ["property_of", "tool_number", "part_description"]
     missing = [c for c in required if c not in df.columns]
@@ -606,52 +843,54 @@ def build_batch_zip(
                 default_hole_offset,
             )
 
-            svg_output, _ = generate_svg(
-                owner=owner,
-                tool_number=tool_number,
-                part_desc=part_desc,
-                mode=mode,
-                hole_dia=hole_dia,
-                hole_offset=hole_offset,
-                corner_r=corner_r,
-                border_offset=border_offset,
-                left_x=left_x,
-                left_w=left_w,
-                right_x=right_x,
-                row1_y=row1_y,
-                row2_y=row2_y,
-                row3_y=row3_y,
-                fs1=fs1,
-                fs2=fs2,
-                fs3=fs3,
-                show_guides=False,
-                show_border=show_border,
-            )
-
-            dxf_bytes = generate_dxf(
-                owner=owner,
-                tool_number=tool_number,
-                part_desc=part_desc,
-                mode=mode,
-                hole_dia=hole_dia,
-                hole_offset=hole_offset,
-                corner_r=corner_r,
-                border_offset=border_offset,
-                left_x=left_x,
-                left_w=left_w,
-                right_x=right_x,
-                row1_y=row1_y,
-                row2_y=row2_y,
-                row3_y=row3_y,
-                fs1=fs1,
-                fs2=fs2,
-                fs3=fs3,
-                show_border=show_border,
-            )
-
             base_name = unique_names[idx]
-            zf.writestr(f"{base_name}.svg", svg_output.encode("utf-8"))
-            zf.writestr(f"{base_name}.dxf", dxf_bytes)
+
+            if include_svg:
+                svg_output, _ = generate_svg(
+                    owner=owner,
+                    tool_number=tool_number,
+                    part_desc=part_desc,
+                    mode=mode,
+                    hole_dia=hole_dia,
+                    hole_offset=hole_offset,
+                    corner_r=corner_r,
+                    border_offset=border_offset,
+                    left_x=left_x,
+                    left_w=left_w,
+                    right_x=right_x,
+                    row1_y=row1_y,
+                    row2_y=row2_y,
+                    row3_y=row3_y,
+                    fs1=fs1,
+                    fs2=fs2,
+                    fs3=fs3,
+                    show_guides=False,
+                    show_border=show_border,
+                )
+                zf.writestr(f"{base_name}.svg", svg_output.encode("utf-8"))
+
+            if include_dxf:
+                dxf_bytes = generate_dxf(
+                    owner=owner,
+                    tool_number=tool_number,
+                    part_desc=part_desc,
+                    mode=mode,
+                    hole_dia=hole_dia,
+                    hole_offset=hole_offset,
+                    corner_r=corner_r,
+                    border_offset=border_offset,
+                    left_x=left_x,
+                    left_w=left_w,
+                    right_x=right_x,
+                    row1_y=row1_y,
+                    row2_y=row2_y,
+                    row3_y=row3_y,
+                    fs1=fs1,
+                    fs2=fs2,
+                    fs3=fs3,
+                    show_border=show_border,
+                )
+                zf.writestr(f"{base_name}.dxf", dxf_bytes)
 
             preview_records.append(
                 {
@@ -673,9 +912,14 @@ def build_batch_zip(
 # UI
 # ------------------------------------------------------------
 st.title("Laser Label Generator")
-st.caption("Single and batch label generation with SVG vector outlines, DXF export, and ZIP packaging.")
+st.caption(
+    "Single and batch label generation with SVG vector outlines, DXF export, ZIP packaging, "
+    "and a dedicated custom Excel import tab."
+)
 
-tab_single, tab_batch = st.tabs(["Single label", "Batch CSV / Excel"])
+tab_single, tab_batch, tab_custom = st.tabs(
+    ["Single label", "Batch CSV / Excel", "Custom Excel tools list"]
+)
 
 # Shared settings
 with st.sidebar:
@@ -750,27 +994,7 @@ with tab_single:
             show_border=show_border,
         )
 
-        colors = get_mode_colors(mode_single)
-        preview_svg = make_preview_svg(svg_output, LABEL_W, LABEL_H, preview_scale)
-        preview_height = int(LABEL_H * preview_scale + 80)
-
-        preview_html = f"""
-        <div style="
-            background:{colors['preview_bg']};
-            padding:20px;
-            border-radius:12px;
-            border:1px solid #d0d0d0;
-            min-height:{preview_height}px;
-            display:flex;
-            justify-content:center;
-            align-items:center;
-            overflow:auto;">
-            <div style="padding:10px; border-radius:10px;">
-                {preview_svg}
-            </div>
-        </div>
-        """
-        components.html(preview_html, height=preview_height + 40)
+        render_svg_preview_card(svg_output, mode_single, preview_scale)
 
         st.caption(
             f"Preview scale: {preview_scale:.1f} px/mm | "
@@ -914,28 +1138,8 @@ Optional columns:
                     show_border=show_border,
                 )
 
-                colors = get_mode_colors(selected_mode)
-                preview_svg = make_preview_svg(preview_svg_raw, LABEL_W, LABEL_H, preview_scale)
-                preview_height = int(LABEL_H * preview_scale + 80)
-
-                preview_html = f"""
-                <div style="
-                    background:{colors['preview_bg']};
-                    padding:20px;
-                    border-radius:12px;
-                    border:1px solid #d0d0d0;
-                    min-height:{preview_height}px;
-                    display:flex;
-                    justify-content:center;
-                    align-items:center;
-                    overflow:auto;">
-                    <div style="padding:10px; border-radius:10px;">
-                        {preview_svg}
-                    </div>
-                </div>
-                """
                 st.markdown("### Selected row preview")
-                components.html(preview_html, height=preview_height + 40)
+                render_svg_preview_card(preview_svg_raw, selected_mode, preview_scale)
 
                 zip_bytes, batch_result_df = build_batch_zip(
                     df=preview_df,
@@ -971,6 +1175,192 @@ Optional columns:
         except Exception as e:
             st.error(f"Could not process file: {e}")
 
+with tab_custom:
+    st.subheader("Custom Excel tools list")
+    st.caption("Real Dafra template mapping: izdelek → part description, sifra_orodja → tool number, lastnik → Property of.")
+
+    custom_uploaded = st.file_uploader(
+        "Upload custom CSV or Excel file",
+        type=["csv", "xlsx", "xls"],
+        key="custom_upload",
+    )
+
+    if custom_uploaded is not None:
+        try:
+            file_name = custom_uploaded.name.lower()
+
+            if file_name.endswith(".csv"):
+                custom_uploaded.seek(0)
+                raw_custom_df = normalize_columns(pd.read_csv(custom_uploaded))
+                raw_custom_df.insert(0, "excel_row", range(2, 2 + len(raw_custom_df)))
+
+                custom_df = normalize_custom_template_df(raw_custom_df)
+
+                # lower CSV rows = higher priority
+                custom_df = custom_df.iloc[::-1].reset_index(drop=True)
+                custom_df.insert(0, "priority", range(1, len(custom_df) + 1))
+            else:
+                custom_df = load_custom_tool_excel(custom_uploaded)
+
+            custom_df["mode"] = mode_default
+            custom_df["hole_dia"] = hole_dia_default
+            custom_df["hole_offset"] = hole_offset_default
+
+            display_cols = ["priority", "excel_row", "tool_number", "property_of", "part_description"]
+            for extra_col in CUSTOM_OPTIONAL_DISPLAY:
+                if extra_col in custom_df.columns:
+                    display_cols.append(extra_col)
+
+            st.markdown("### Select rows for export")
+            edited_custom_df = selection_editor(
+                custom_df,
+                key="custom_selection_editor",
+                display_columns=display_cols,
+                checkbox_label="Export",
+            )
+
+            selected_rows = edited_custom_df[edited_custom_df["print"]].copy()
+
+            info_c1, info_c2 = st.columns([1, 1])
+            with info_c1:
+                st.info(
+                    f"Rows in table: {len(edited_custom_df)} | Selected for export: {len(selected_rows)}"
+                )
+            with info_c2:
+                if not edited_custom_df.empty:
+                    top_tool = str(edited_custom_df.iloc[0]["tool_number"])
+                    st.caption(f"Highest priority row at top: {top_tool}")
+
+            st.markdown("### Highlighted preview table")
+            st.dataframe(
+                edited_custom_df.style.apply(highlight_selected_rows, axis=1),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            preview_source = selected_rows if not selected_rows.empty else edited_custom_df
+            if not preview_source.empty:
+                preview_labels = [
+                    f"P{int(row['priority'])} | Tool {row['tool_number']} | Excel row {int(row['excel_row'])}"
+                    for _, row in preview_source.iterrows()
+                ]
+                preview_choice = st.selectbox(
+                    "Preview tool",
+                    preview_labels,
+                    key="custom_preview_choice",
+                )
+                preview_idx = preview_labels.index(preview_choice)
+                preview_row = preview_source.iloc[preview_idx]
+
+                preview_svg_raw, _ = generate_svg(
+                    owner=str(preview_row["property_of"]),
+                    tool_number=str(preview_row["tool_number"]),
+                    part_desc=str(preview_row["part_description"]),
+                    mode=mode_default,
+                    hole_dia=float(hole_dia_default),
+                    hole_offset=float(hole_offset_default),
+                    corner_r=corner_r,
+                    border_offset=border_offset,
+                    left_x=left_x,
+                    left_w=left_w,
+                    right_x=right_x,
+                    row1_y=row1_y,
+                    row2_y=row2_y,
+                    row3_y=row3_y,
+                    fs1=fs1,
+                    fs2=fs2,
+                    fs3=fs3,
+                    show_guides=False,
+                    show_border=show_border,
+                )
+
+                st.markdown("### Selected tool preview")
+                render_svg_preview_card(preview_svg_raw, mode_default, preview_scale)
+
+                single_svg_bytes = preview_svg_raw.encode("utf-8")
+                single_dxf_bytes = generate_dxf(
+                    owner=str(preview_row["property_of"]),
+                    tool_number=str(preview_row["tool_number"]),
+                    part_desc=str(preview_row["part_description"]),
+                    mode=mode_default,
+                    hole_dia=float(hole_dia_default),
+                    hole_offset=float(hole_offset_default),
+                    corner_r=corner_r,
+                    border_offset=border_offset,
+                    left_x=left_x,
+                    left_w=left_w,
+                    right_x=right_x,
+                    row1_y=row1_y,
+                    row2_y=row2_y,
+                    row3_y=row3_y,
+                    fs1=fs1,
+                    fs2=fs2,
+                    fs3=fs3,
+                    show_border=show_border,
+                )
+
+                preview_base_name = safe_filename(str(preview_row["tool_number"]) or "laser_label")
+                p1, p2 = st.columns(2)
+                with p1:
+                    st.download_button(
+                        "Download preview SVG",
+                        data=single_svg_bytes,
+                        file_name=f"{preview_base_name}.svg",
+                        mime="image/svg+xml",
+                        use_container_width=True,
+                    )
+                with p2:
+                    st.download_button(
+                        "Download preview DXF",
+                        data=single_dxf_bytes,
+                        file_name=f"{preview_base_name}.dxf",
+                        mime="application/dxf",
+                        use_container_width=True,
+                    )
+
+            st.markdown("### Export selected rows")
+            if selected_rows.empty:
+                st.warning("Select at least one row in the table above to export SVG + DXF files.")
+            else:
+                export_df = selected_rows.drop(columns=["print"]).copy()
+
+                zip_bytes, export_manifest_df = build_batch_zip(
+                    df=export_df,
+                    default_mode=mode_default,
+                    default_hole_dia=float(hole_dia_default),
+                    default_hole_offset=float(hole_offset_default),
+                    corner_r=corner_r,
+                    border_offset=border_offset,
+                    left_x=left_x,
+                    left_w=left_w,
+                    right_x=right_x,
+                    row1_y=row1_y,
+                    row2_y=row2_y,
+                    row3_y=row3_y,
+                    fs1=fs1,
+                    fs2=fs2,
+                    fs3=fs3,
+                    show_border=show_border,
+                )
+
+                st.download_button(
+                    f"Download ZIP for selected rows ({len(export_df)})",
+                    data=zip_bytes,
+                    file_name="laser_labels_selected.zip",
+                    mime="application/zip",
+                    use_container_width=True,
+                )
+
+                with st.expander("Selected export file list"):
+                    st.dataframe(
+                        export_manifest_df,
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+        except Exception as e:
+            st.error(f"Could not process custom file: {e}")
+
 with st.expander("Example CSV"):
     st.code(
         """property_of,tool_number,part_description,mode,hole_dia,hole_offset
@@ -979,6 +1369,19 @@ DAFRA,TL-00125,Punch holder,Normal,3.0,4.5
 Ledinek,TL-00126,Clamp plate,,,
 """,
         language="csv",
+    )
+
+with st.expander("Custom Excel / CSV mapping"):
+    st.code(
+        """Real Dafra template mapping
+izdelek -> part_description
+sifra_orodja -> tool_number
+lastnik -> property_of
+
+CSV can use the same names:
+izdelek,sifra_orodja,lastnik
+""",
+        language="text",
     )
 
 with st.expander("Notes"):
@@ -990,10 +1393,15 @@ Exports remain unchanged:
 - SVG stays at 78.5 × 21 mm
 - DXF stays in real millimeter geometry
 
-Batch mode behavior:
-- one SVG and one DXF is created for every row
-- files are packed into one ZIP
-- file names are based on `tool_number`
-- duplicate tool numbers automatically get `_2`, `_3`, etc.
+Custom Excel tab behavior:
+- detects the header block automatically
+- reverses the row order so lower Excel rows get higher priority and appear on top
+- user selects rows with checkboxes
+- selected rows are highlighted in the preview table
+- one SVG and one DXF is created per selected row
+- all generated files are packed into one ZIP
+
+If you use old .xls files, install xlrd:
+pip install xlrd
 """
     )
