@@ -121,6 +121,58 @@ def make_unique_strings(values):
     return result
 
 
+def normalize_space(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "")).strip()
+
+
+def clean_parsed_value(text: str) -> str:
+    text = normalize_space(text)
+    text = re.sub(r"^\d+\)\s*", "", text)
+    return text.strip(" -")
+
+
+def parse_napis_na(text: str) -> dict:
+    raw = "" if text is None or pd.isna(text) else str(text)
+    if not raw.strip():
+        return {
+            "parsed_property_of": "",
+            "parsed_tool_number": "",
+            "parsed_part_description": "",
+        }
+
+    s = raw.replace("\r", "\n")
+    s = re.sub(r"[ \t]+", " ", s)
+    s = re.sub(r"\n+", "\n", s).strip()
+    flat = normalize_space(s)
+
+    patterns = {
+        "parsed_property_of": [
+            r"(?:lastnik|possessor|eigentümer)\s*:\s*(.+?)(?=(?:orodje\s*št\.?|orodje\s*st\.?|tool\s*no\.?|wkz\.\s*no\.?|(?:\d+\)\s*)?(?:izdelek|product|produkt)\s*:|$))",
+        ],
+        "parsed_tool_number": [
+            r"(?:orodje\s*št\.?|orodje\s*st\.?|tool\s*no\.?|wkz\.\s*no\.?)\s*:\s*([A-Za-z0-9./_-]+)",
+        ],
+        "parsed_part_description": [
+            r"(?:\d+\)\s*)?(?:izdelek|product|produkt)\s*:\s*(.+)$",
+        ],
+    }
+
+    result = {
+        "parsed_property_of": "",
+        "parsed_tool_number": "",
+        "parsed_part_description": "",
+    }
+
+    for key, regex_list in patterns.items():
+        for pattern in regex_list:
+            m = re.search(pattern, flat, flags=re.IGNORECASE)
+            if m:
+                result[key] = clean_parsed_value(m.group(1))
+                break
+
+    return result
+
+
 def get_mode_colors(mode: str):
     if mode == "Anodized aluminium (negative)":
         return {
@@ -467,19 +519,45 @@ def pick_first_existing_column(columns, aliases):
 def normalize_custom_template_df(data_df: pd.DataFrame) -> pd.DataFrame:
     df = data_df.copy()
 
+    if "napis_na" in df.columns:
+        parsed_df = df["napis_na"].apply(parse_napis_na).apply(pd.Series)
+        for col in parsed_df.columns:
+            df[col] = parsed_df[col]
+    else:
+        df["parsed_property_of"] = ""
+        df["parsed_tool_number"] = ""
+        df["parsed_part_description"] = ""
+
     resolved = {}
     for target_col, aliases in CUSTOM_REQUIRED_ALIASES.items():
         source_col = pick_first_existing_column(df.columns, aliases)
-        if source_col is None:
-            raise ValueError(
-                f"Could not find source column for '{target_col}'. "
-                f"Tried: {', '.join(aliases)}. "
-                f"Available columns: {', '.join([str(c) for c in df.columns])}"
-            )
         resolved[target_col] = source_col
 
-    for target_col, source_col in resolved.items():
-        df[target_col] = df[source_col].fillna("").astype(str).str.strip()
+    if resolved.get("property_of") is not None:
+        fallback_property = df[resolved["property_of"]].fillna("").astype(str).str.strip()
+    else:
+        fallback_property = pd.Series([""] * len(df), index=df.index)
+
+    tool_source = pick_first_existing_column(df.columns, ["orodje", "sifra_orodja", "orodje_sifra", "tool_number"])
+    if tool_source is not None:
+        fallback_tool = df[tool_source].fillna("").astype(str).str.strip()
+    else:
+        fallback_tool = pd.Series([""] * len(df), index=df.index)
+
+    part_source = pick_first_existing_column(df.columns, ["izdelek", "part_description", "izdelek_2"])
+    if part_source is not None:
+        fallback_part = df[part_source].fillna("").astype(str).str.strip()
+    else:
+        fallback_part = pd.Series([""] * len(df), index=df.index)
+
+    df["property_of"] = df["parsed_property_of"].fillna("").astype(str).str.strip()
+    df["property_of"] = df["property_of"].mask(df["property_of"] == "", fallback_property)
+
+    df["tool_number"] = df["parsed_tool_number"].fillna("").astype(str).str.strip()
+    df["tool_number"] = df["tool_number"].mask(df["tool_number"] == "", fallback_tool)
+
+    df["part_description"] = df["parsed_part_description"].fillna("").astype(str).str.strip()
+    df["part_description"] = df["part_description"].mask(df["part_description"] == "", fallback_part)
 
     df = df[
         ~(
@@ -1177,7 +1255,10 @@ Optional columns:
 
 with tab_custom:
     st.subheader("Custom Excel tools list")
-    st.caption("Real Dafra template mapping: izdelek → part description, sifra_orodja → tool number, lastnik → Property of.")
+    st.caption(
+        "Primary source: 'napis_na' → parse Property of / Tool number / Part description. "
+        "Fallback: lastnik / orodje or sifra_orodja / izdelek."
+    )
 
     custom_uploaded = st.file_uploader(
         "Upload custom CSV or Excel file",
@@ -1208,8 +1289,12 @@ with tab_custom:
 
             display_cols = ["priority", "excel_row", "tool_number", "property_of", "part_description"]
             for extra_col in CUSTOM_OPTIONAL_DISPLAY:
-                if extra_col in custom_df.columns:
+                if extra_col in custom_df.columns and extra_col not in display_cols:
                     display_cols.append(extra_col)
+
+            for extra in ["parsed_property_of", "parsed_tool_number", "parsed_part_description"]:
+                if extra in custom_df.columns and extra not in display_cols:
+                    display_cols.append(extra)
 
             st.markdown("### Select rows for export")
             edited_custom_df = selection_editor(
@@ -1373,13 +1458,19 @@ Ledinek,TL-00126,Clamp plate,,,
 
 with st.expander("Custom Excel / CSV mapping"):
     st.code(
-        """Real Dafra template mapping
-izdelek -> part_description
-sifra_orodja -> tool_number
-lastnik -> property_of
+        """Primary parsing source
+napis_na -> parse:
+- property_of
+- tool_number
+- part_description
 
-CSV can use the same names:
-izdelek,sifra_orodja,lastnik
+Fallback columns
+lastnik -> property_of
+orodje or sifra_orodja -> tool_number
+izdelek -> part_description
+
+CSV can also use:
+napis_na,lastnik,orodje,sifra_orodja,izdelek
 """,
         language="text",
     )
@@ -1400,6 +1491,7 @@ Custom Excel tab behavior:
 - selected rows are highlighted in the preview table
 - one SVG and one DXF is created per selected row
 - all generated files are packed into one ZIP
+- values are parsed from `napis_na` first, then fallback to separate columns
 
 If you use old .xls files, install xlrd:
 pip install xlrd
