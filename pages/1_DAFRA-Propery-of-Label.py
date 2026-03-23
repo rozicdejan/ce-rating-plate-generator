@@ -61,6 +61,10 @@ MIN_TEXT_HEIGHT_MM = 1.2
 RIGHT_MARGIN = 2.2
 VECTOR_FONT_FAMILY = "DejaVu Sans Condensed"
 
+AUTO_WRAP_MAX_LINES = 2
+PART_VALUE_BOTTOM_MARGIN = 1.0
+MULTILINE_GAP_MM = 0.35
+
 ALLOWED_MODES = ["Normal", "Anodized aluminium (negative)"]
 
 CUSTOM_REQUIRED_ALIASES = {
@@ -80,6 +84,9 @@ CUSTOM_OPTIONAL_DISPLAY = [
     "lastnik",
     "kupec",
     "avtor_uros_stuklek_odjemalec",
+    "parsed_property_of",
+    "parsed_tool_number",
+    "parsed_part_description",
 ]
 
 # ------------------------------------------------------------
@@ -129,6 +136,59 @@ def clean_parsed_value(text: str) -> str:
     text = normalize_space(text)
     text = re.sub(r"^\d+\)\s*", "", text)
     return text.strip(" -")
+
+
+def unique_pairs(pairs):
+    seen = set()
+    out = []
+    for a, b in pairs:
+        a = normalize_space(a)
+        b = normalize_space(b)
+        if not a or not b:
+            continue
+        key = (a, b)
+        if key not in seen:
+            seen.add(key)
+            out.append((a, b))
+    return out
+
+
+def build_two_line_candidates(text: str):
+    raw = "" if text is None or pd.isna(text) else str(text)
+    raw = raw.replace("\r", "\n")
+    raw = re.sub(r"\n+", "\n", raw).strip()
+
+    pairs = []
+
+    explicit_lines = [normalize_space(p) for p in raw.split("\n") if normalize_space(p)]
+    if len(explicit_lines) >= 2:
+        pairs.append((explicit_lines[0], " ".join(explicit_lines[1:])))
+
+    flat = normalize_space(raw)
+    if not flat:
+        return []
+
+    for m in re.finditer(r"\s+(?=(?:2[\.\)]|2[-–]))", flat):
+        pairs.append((flat[:m.start()].strip(), flat[m.start():].strip()))
+
+    for pattern in [r"\s*[;|]\s*", r"\s+/\s+", r"\s+-\s+", r",\s+"]:
+        for m in re.finditer(pattern, flat):
+            pairs.append((flat[:m.start()].strip(), flat[m.end():].strip()))
+
+    words = flat.split()
+    if len(words) >= 2:
+        best_i = 1
+        best_diff = 10**9
+        for i in range(1, len(words)):
+            left = " ".join(words[:i])
+            right = " ".join(words[i:])
+            diff = abs(len(left) - len(right))
+            if diff < best_diff:
+                best_diff = diff
+                best_i = i
+        pairs.append((" ".join(words[:best_i]), " ".join(words[best_i:])))
+
+    return unique_pairs(pairs)
 
 
 def parse_napis_na(text: str) -> dict:
@@ -267,6 +327,136 @@ def place_path_in_box(base_path, scale, box_x, box_y, box_w, box_h, align="left"
     return path.transformed(Affine2D().translate(tx, ty))
 
 
+def fit_text_block(
+    text: str,
+    desired_h_mm: float,
+    box_x: float,
+    box_y: float,
+    box_w: float,
+    box_h: float,
+    weight: str,
+    align: str = "left",
+    pad_x: float = 0.0,
+    max_lines: int = 1,
+):
+    raw = normalize_space(text)
+    empty = {
+        "texts": [],
+        "paths": [],
+        "used_heights": [],
+        "used_height_summary": 0.0,
+        "line_boxes": [],
+        "line_count": 0,
+    }
+    if not raw:
+        return empty
+
+    single_final, single_base, _, single_scale, single_used_h = fit_text_for_box(
+        raw, desired_h_mm, box_w, box_h, weight
+    )
+    single_complete = single_final == raw
+
+    best = {
+        "texts": [single_final],
+        "bases": [single_base],
+        "scales": [single_scale],
+        "used_heights": [single_used_h],
+        "line_box_h": box_h,
+        "gap": 0.0,
+        "score": (1000 if single_complete else 0) + single_used_h * 100 + len(single_final),
+    }
+
+    if max_lines >= 2 and box_h >= (MIN_TEXT_HEIGHT_MM * 2 + MULTILINE_GAP_MM):
+        gap = min(MULTILINE_GAP_MM, max(0.25, box_h * 0.08))
+        line_box_h = (box_h - gap) / 2.0
+
+        if line_box_h >= MIN_TEXT_HEIGHT_MM:
+            for line1, line2 in build_two_line_candidates(text):
+                f1 = fit_text_for_box(line1, desired_h_mm, box_w, line_box_h, weight)
+                f2 = fit_text_for_box(line2, desired_h_mm, box_w, line_box_h, weight)
+
+                t1, b1, _, s1, h1 = f1
+                t2, b2, _, s2, h2 = f2
+
+                if not t1 or not t2:
+                    continue
+
+                complete = (t1 == line1 and t2 == line2)
+                score = (
+                    (2000 if complete else 0)
+                    + min(h1, h2) * 100
+                    + len(t1) + len(t2)
+                    - abs(len(line1) - len(line2)) * 0.15
+                )
+
+                if complete and not single_complete:
+                    score += 500
+
+                if score > best["score"]:
+                    best = {
+                        "texts": [t1, t2],
+                        "bases": [b1, b2],
+                        "scales": [s1, s2],
+                        "used_heights": [h1, h2],
+                        "line_box_h": line_box_h,
+                        "gap": gap,
+                        "score": score,
+                    }
+
+    paths = []
+    line_boxes = []
+
+    if len(best["texts"]) == 1:
+        placed = place_path_in_box(
+            best["bases"][0],
+            best["scales"][0],
+            box_x,
+            box_y,
+            box_w,
+            box_h,
+            align=align,
+            pad_x=pad_x,
+        ) if best["bases"][0] is not None else None
+
+        if placed is not None:
+            paths.append(placed)
+
+        line_boxes.append((box_x, box_y, box_w, box_h))
+        used_height_summary = best["used_heights"][0] if best["used_heights"] else 0.0
+
+    else:
+        top_y = box_y
+        bottom_y = box_y + best["line_box_h"] + best["gap"]
+
+        for i, line_y in enumerate([top_y, bottom_y]):
+            placed = place_path_in_box(
+                best["bases"][i],
+                best["scales"][i],
+                box_x,
+                line_y,
+                box_w,
+                best["line_box_h"],
+                align=align,
+                pad_x=pad_x,
+            ) if best["bases"][i] is not None else None
+
+            if placed is not None:
+                paths.append(placed)
+
+            line_boxes.append((box_x, line_y, box_w, best["line_box_h"]))
+
+        used_height_summary = sum(best["used_heights"]) + best["gap"]
+
+    return {
+        "texts": best["texts"],
+        "paths": paths,
+        "used_heights": best["used_heights"],
+        "used_height_summary": used_height_summary,
+        "line_boxes": line_boxes,
+        "line_count": len(best["texts"]),
+    }
+
+
 def mpl_path_to_svg_d(path_obj):
     if path_obj is None:
         return ""
@@ -385,12 +575,6 @@ def make_preview_svg(svg_text: str, label_w_mm: float, label_h_mm: float, px_per
     return svg_preview
 
 
-def highlight_selected_rows(row):
-    if bool(row.get("print", False)):
-        return ["background-color: rgba(56, 189, 248, 0.18);"] * len(row)
-    return [""] * len(row)
-
-
 def selection_editor(
     df: pd.DataFrame,
     key: str,
@@ -442,7 +626,6 @@ def render_svg_preview_card(svg_output: str, mode: str, preview_scale: float):
     </div>
     """
     components.html(preview_html, height=preview_height + 40)
-
 
 # ------------------------------------------------------------
 # Custom Excel helpers
@@ -597,7 +780,6 @@ def load_custom_tool_excel(uploaded_file) -> pd.DataFrame:
 
     return data_df
 
-
 # ------------------------------------------------------------
 # SVG generation with vector outlines
 # ------------------------------------------------------------
@@ -626,6 +808,8 @@ def generate_svg(
     rows = build_rows(owner, tool_number, part_desc)
 
     right_w = LABEL_W - right_x - RIGHT_MARGIN
+    part_value_h = max(ROW3_H, LABEL_H - row3_y - max(border_offset, PART_VALUE_BOTTOM_MARGIN))
+
     left_boxes = [
         {"x": left_x, "w": left_w, "row": row_box(row1_y, ROW1_H)},
         {"x": left_x, "w": left_w, "row": row_box(row2_y, ROW2_H)},
@@ -634,11 +818,11 @@ def generate_svg(
     right_boxes = [
         {"x": right_x, "w": right_w, "row": row_box(row1_y, ROW1_H)},
         {"x": right_x, "w": right_w, "row": row_box(row2_y, ROW2_H)},
-        {"x": right_x, "w": right_w, "row": row_box(row3_y, ROW3_H)},
+        {"x": right_x, "w": right_w, "row": row_box(row3_y, part_value_h)},
     ]
     requested = [fs1, fs2, fs3]
 
-    text_paths = []
+    all_svg_paths = []
     meta = {
         "left_sizes": [],
         "right_sizes": [],
@@ -651,46 +835,46 @@ def generate_svg(
         label_txt, value_txt = rows[i]
         req_h = requested[i]
 
-        left_final, left_base, _, left_scale, left_used_h = fit_text_for_box(
-            label_txt, req_h, left_boxes[i]["w"], left_boxes[i]["row"]["h"], "bold"
-        )
-        right_final, right_base, _, right_scale, right_used_h = fit_text_for_box(
-            value_txt, req_h, right_boxes[i]["w"], right_boxes[i]["row"]["h"], "regular"
-        )
-
-        left_placed = place_path_in_box(
-            left_base,
-            left_scale,
-            left_boxes[i]["x"],
-            left_boxes[i]["row"]["y"],
-            left_boxes[i]["w"],
-            left_boxes[i]["row"]["h"],
+        left_block = fit_text_block(
+            text=label_txt,
+            desired_h_mm=req_h,
+            box_x=left_boxes[i]["x"],
+            box_y=left_boxes[i]["row"]["y"],
+            box_w=left_boxes[i]["w"],
+            box_h=left_boxes[i]["row"]["h"],
+            weight="bold",
             align="left",
             pad_x=0.0,
-        ) if left_base is not None else None
-
-        right_placed = place_path_in_box(
-            right_base,
-            right_scale,
-            right_boxes[i]["x"],
-            right_boxes[i]["row"]["y"],
-            right_boxes[i]["w"],
-            right_boxes[i]["row"]["h"],
-            align="left",
-            pad_x=0.0,
-        ) if right_base is not None else None
-
-        text_paths.append(
-            {
-                "left_d": mpl_path_to_svg_d(left_placed),
-                "right_d": mpl_path_to_svg_d(right_placed),
-            }
+            max_lines=1,
         )
 
-        meta["left_sizes"].append(left_used_h)
-        meta["right_sizes"].append(right_used_h)
-        meta["left_texts"].append(left_final)
-        meta["right_texts"].append(right_final)
+        right_block = fit_text_block(
+            text=value_txt,
+            desired_h_mm=req_h,
+            box_x=right_boxes[i]["x"],
+            box_y=right_boxes[i]["row"]["y"],
+            box_w=right_boxes[i]["w"],
+            box_h=right_boxes[i]["row"]["h"],
+            weight="regular",
+            align="left",
+            pad_x=0.0,
+            max_lines=AUTO_WRAP_MAX_LINES,
+        )
+
+        for p in left_block["paths"]:
+            d = mpl_path_to_svg_d(p)
+            if d:
+                all_svg_paths.append(d)
+
+        for p in right_block["paths"]:
+            d = mpl_path_to_svg_d(p)
+            if d:
+                all_svg_paths.append(d)
+
+        meta["left_sizes"].append(left_block["used_height_summary"])
+        meta["right_sizes"].append(right_block["used_height_summary"])
+        meta["left_texts"].append(" / ".join(left_block["texts"]))
+        meta["right_texts"].append(" / ".join(right_block["texts"]))
 
     hole_r = hole_dia / 2.0
     hole_y = LABEL_H / 2.0
@@ -727,9 +911,11 @@ def generate_svg(
 
             <rect x="{right_x}" y="{row1_y}" width="{right_w}" height="{ROW1_H}" />
             <rect x="{right_x}" y="{row2_y}" width="{right_w}" height="{ROW2_H}" />
-            <rect x="{right_x}" y="{row3_y}" width="{right_w}" height="{ROW3_H}" />
+            <rect x="{right_x}" y="{row3_y}" width="{right_w}" height="{part_value_h}" />
         </g>
         """
+
+    text_svg = "\n".join(f'<path d="{d}" />' for d in all_svg_paths)
 
     svg = f"""<svg xmlns="http://www.w3.org/2000/svg"
         width="{LABEL_W}mm"
@@ -745,17 +931,11 @@ def generate_svg(
         {guides_svg}
 
         <g fill="{colors['text_fill']}" fill-rule="evenodd" stroke="none">
-            <path d="{text_paths[0]['left_d']}" />
-            <path d="{text_paths[0]['right_d']}" />
-            <path d="{text_paths[1]['left_d']}" />
-            <path d="{text_paths[1]['right_d']}" />
-            <path d="{text_paths[2]['left_d']}" />
-            <path d="{text_paths[2]['right_d']}" />
+            {text_svg}
         </g>
     </svg>"""
 
     return svg, meta
-
 
 # ------------------------------------------------------------
 # DXF generation
@@ -782,6 +962,7 @@ def generate_dxf(
 ):
     rows = build_rows(owner, tool_number, part_desc)
     right_w = LABEL_W - right_x - RIGHT_MARGIN
+    part_value_h = max(ROW3_H, LABEL_H - row3_y - max(border_offset, PART_VALUE_BOTTOM_MARGIN))
 
     left_boxes = [
         {"x": left_x, "w": left_w, "row": row_box(row1_y, ROW1_H)},
@@ -791,7 +972,7 @@ def generate_dxf(
     right_boxes = [
         {"x": right_x, "w": right_w, "row": row_box(row1_y, ROW1_H)},
         {"x": right_x, "w": right_w, "row": row_box(row2_y, ROW2_H)},
-        {"x": right_x, "w": right_w, "row": row_box(row3_y, ROW3_H)},
+        {"x": right_x, "w": right_w, "row": row_box(row3_y, part_value_h)},
     ]
 
     doc = ezdxf.new("R2010")
@@ -834,39 +1015,49 @@ def generate_dxf(
     msp.add_circle((hole_left_x, hole_y), hole_r, dxfattribs={"layer": "HOLES"})
     msp.add_circle((hole_right_x, hole_y), hole_r, dxfattribs={"layer": "HOLES"})
 
-    def add_text_entity(box_x, box_w, row_y, row_h, text_value, desired_h, weight):
-        final_text, _, _, _, used_h = fit_text_for_box(
-            text_value, desired_h, box_w, row_h, weight
+    def add_text_block_dxf(box_x, box_w, row_y, row_h, text_value, desired_h, weight, max_lines=1):
+        block = fit_text_block(
+            text=text_value,
+            desired_h_mm=desired_h,
+            box_x=box_x,
+            box_y=row_y,
+            box_w=box_w,
+            box_h=row_h,
+            weight=weight,
+            align="left",
+            pad_x=0.0,
+            max_lines=max_lines,
         )
-        if not final_text:
-            return
 
-        baseline_y = row_y + row_h * 0.80
-        y_dxf = LABEL_H - baseline_y
+        for i, final_text in enumerate(block["texts"]):
+            line_box_x, line_box_y, _, line_box_h = block["line_boxes"][i]
+            used_h = block["used_heights"][i]
 
-        t = msp.add_text(
-            final_text,
-            dxfattribs={
-                "height": used_h,
-                "layer": "TEXT",
-                "style": "Standard",
-            },
-        )
-        t.set_placement((box_x, y_dxf), align=TextEntityAlignment.LEFT)
+            baseline_y = line_box_y + line_box_h * 0.80
+            y_dxf = LABEL_H - baseline_y
 
-    add_text_entity(left_boxes[0]["x"], left_boxes[0]["w"], row1_y, ROW1_H, rows[0][0], fs1, "bold")
-    add_text_entity(right_boxes[0]["x"], right_boxes[0]["w"], row1_y, ROW1_H, rows[0][1], fs1, "regular")
+            t = msp.add_text(
+                final_text,
+                dxfattribs={
+                    "height": used_h,
+                    "layer": "TEXT",
+                    "style": "Standard",
+                },
+            )
+            t.set_placement((line_box_x, y_dxf), align=TextEntityAlignment.LEFT)
 
-    add_text_entity(left_boxes[1]["x"], left_boxes[1]["w"], row2_y, ROW2_H, rows[1][0], fs2, "bold")
-    add_text_entity(right_boxes[1]["x"], right_boxes[1]["w"], row2_y, ROW2_H, rows[1][1], fs2, "regular")
+    add_text_block_dxf(left_boxes[0]["x"], left_boxes[0]["w"], row1_y, ROW1_H, rows[0][0], fs1, "bold", max_lines=1)
+    add_text_block_dxf(right_boxes[0]["x"], right_boxes[0]["w"], row1_y, ROW1_H, rows[0][1], fs1, "regular", max_lines=AUTO_WRAP_MAX_LINES)
 
-    add_text_entity(left_boxes[2]["x"], left_boxes[2]["w"], row3_y, ROW3_H, rows[2][0], fs3, "bold")
-    add_text_entity(right_boxes[2]["x"], right_boxes[2]["w"], row3_y, ROW3_H, rows[2][1], fs3, "regular")
+    add_text_block_dxf(left_boxes[1]["x"], left_boxes[1]["w"], row2_y, ROW2_H, rows[1][0], fs2, "bold", max_lines=1)
+    add_text_block_dxf(right_boxes[1]["x"], right_boxes[1]["w"], row2_y, ROW2_H, rows[1][1], fs2, "regular", max_lines=AUTO_WRAP_MAX_LINES)
+
+    add_text_block_dxf(left_boxes[2]["x"], left_boxes[2]["w"], row3_y, ROW3_H, rows[2][0], fs3, "bold", max_lines=1)
+    add_text_block_dxf(right_boxes[2]["x"], right_boxes[2]["w"], row3_y, part_value_h, rows[2][1], fs3, "regular", max_lines=AUTO_WRAP_MAX_LINES)
 
     stream = io.StringIO()
     doc.write(stream)
     return stream.getvalue().encode("utf-8")
-
 
 # ------------------------------------------------------------
 # ZIP generation
@@ -984,7 +1175,6 @@ def build_batch_zip(
 
     zip_buffer.seek(0)
     return zip_buffer.getvalue(), pd.DataFrame(preview_records)
-
 
 # ------------------------------------------------------------
 # UI
@@ -1186,7 +1376,7 @@ Optional columns:
                 )
 
                 row_labels = [
-                    f"{i+1}. {str(preview_df.iloc[i]['tool_number'])}"
+                    f"{i + 1}. {str(preview_df.iloc[i]['tool_number'])}"
                     for i in range(len(preview_df))
                 ]
                 selected_label = st.selectbox("Preview row", row_labels)
@@ -1292,10 +1482,6 @@ with tab_custom:
                 if extra_col in custom_df.columns and extra_col not in display_cols:
                     display_cols.append(extra_col)
 
-            for extra in ["parsed_property_of", "parsed_tool_number", "parsed_part_description"]:
-                if extra in custom_df.columns and extra not in display_cols:
-                    display_cols.append(extra)
-
             st.markdown("### Select rows for export")
             edited_custom_df = selection_editor(
                 custom_df,
@@ -1316,14 +1502,18 @@ with tab_custom:
                     top_tool = str(edited_custom_df.iloc[0]["tool_number"])
                     st.caption(f"Highest priority row at top: {top_tool}")
 
-            st.markdown("### Highlighted preview table")
-            st.dataframe(
-                edited_custom_df.style.apply(highlight_selected_rows, axis=1),
-                use_container_width=True,
-                hide_index=True,
-            )
+            st.markdown("### Rows queued for export")
+            if selected_rows.empty:
+                st.info("No rows selected yet. Tick rows in the table above to prepare them for export.")
+            else:
+                selected_preview_df = selected_rows.drop(columns=["print"]).copy()
+                st.dataframe(
+                    selected_preview_df,
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
-            preview_source = selected_rows if not selected_rows.empty else edited_custom_df
+            preview_source = selected_rows.copy()
             if not preview_source.empty:
                 preview_labels = [
                     f"P{int(row['priority'])} | Tool {row['tool_number']} | Excel row {int(row['excel_row'])}"
@@ -1488,10 +1678,11 @@ Custom Excel tab behavior:
 - detects the header block automatically
 - reverses the row order so lower Excel rows get higher priority and appear on top
 - user selects rows with checkboxes
-- selected rows are highlighted in the preview table
+- the lower preview table shows only selected rows for export
 - one SVG and one DXF is created per selected row
 - all generated files are packed into one ZIP
 - values are parsed from `napis_na` first, then fallback to separate columns
+- long text automatically tries to fit in 2 lines when needed
 
 If you use old .xls files, install xlrd:
 pip install xlrd
