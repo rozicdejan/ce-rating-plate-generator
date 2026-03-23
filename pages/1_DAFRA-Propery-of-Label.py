@@ -142,8 +142,8 @@ def unique_pairs(pairs):
     seen = set()
     out = []
     for a, b in pairs:
-        a = normalize_space(a)
-        b = normalize_space(b)
+        a = a.strip()
+        b = b.strip()
         if not a or not b:
             continue
         key = (a, b)
@@ -160,7 +160,8 @@ def build_two_line_candidates(text: str):
 
     pairs = []
 
-    explicit_lines = [normalize_space(p) for p in raw.split("\n") if normalize_space(p)]
+    # Explicit newline should be respected first
+    explicit_lines = [p.strip() for p in raw.split("\n") if p.strip()]
     if len(explicit_lines) >= 2:
         pairs.append((explicit_lines[0], " ".join(explicit_lines[1:])))
 
@@ -168,13 +169,20 @@ def build_two_line_candidates(text: str):
     if not flat:
         return []
 
+    # Important split before Part 2
+    for m in re.finditer(r"\s+(?=(?:part\s*2\s*:))", flat, flags=re.IGNORECASE):
+        pairs.append((flat[:m.start()].strip(), flat[m.start():].strip()))
+
+    # Split before numeric second block
     for m in re.finditer(r"\s+(?=(?:2[\.\)]|2[-–]))", flat):
         pairs.append((flat[:m.start()].strip(), flat[m.start():].strip()))
 
+    # Common separators
     for pattern in [r"\s*[;|]\s*", r"\s+/\s+", r"\s+-\s+", r",\s+"]:
         for m in re.finditer(pattern, flat):
             pairs.append((flat[:m.start()].strip(), flat[m.end():].strip()))
 
+    # Balanced word split
     words = flat.split()
     if len(words) >= 2:
         best_i = 1
@@ -205,30 +213,60 @@ def parse_napis_na(text: str) -> dict:
     s = re.sub(r"\n+", "\n", s).strip()
     flat = normalize_space(s)
 
-    patterns = {
-        "parsed_property_of": [
-            r"(?:lastnik|possessor|eigentümer)\s*:\s*(.+?)(?=(?:orodje\s*št\.?|orodje\s*st\.?|tool\s*no\.?|wkz\.\s*no\.?|(?:\d+\)\s*)?(?:izdelek|product|produkt)\s*:|$))",
-        ],
-        "parsed_tool_number": [
-            r"(?:orodje\s*št\.?|orodje\s*st\.?|tool\s*no\.?|wkz\.\s*no\.?)\s*:\s*([A-Za-z0-9./_-]+)",
-        ],
-        "parsed_part_description": [
-            r"(?:\d+\)\s*)?(?:izdelek|product|produkt)\s*:\s*(.+)$",
-        ],
-    }
-
     result = {
         "parsed_property_of": "",
         "parsed_tool_number": "",
         "parsed_part_description": "",
     }
 
-    for key, regex_list in patterns.items():
-        for pattern in regex_list:
-            m = re.search(pattern, flat, flags=re.IGNORECASE)
-            if m:
-                result[key] = clean_parsed_value(m.group(1))
-                break
+    # Property of / Lastnik / Possessor / Eigentümer
+    m = re.search(
+        r"(?:property\s*of|lastnik|possessor|eigentümer)\s*:\s*(.+?)(?=(?:tool\s*number|tool\s*no\.?|orodje\s*št\.?|orodje\s*st\.?|wkz\.\s*no\.?|part\s*1\s*:|part\s*description\s*:|izdelek\s*:|product\s*:|produkt\s*:|$))",
+        flat,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        result["parsed_property_of"] = clean_parsed_value(m.group(1))
+
+    # Tool number / Tool no / Orodje št
+    m = re.search(
+        r"(?:tool\s*number|tool\s*no\.?|orodje\s*št\.?|orodje\s*st\.?|wkz\.\s*no\.?)\s*:\s*([A-Za-z0-9./_-]+)",
+        flat,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        result["parsed_tool_number"] = clean_parsed_value(m.group(1))
+
+    # Prefer Part 1 / Part 2 block
+    m = re.search(r"((?:part\s*1)\s*:\s*.+)$", flat, flags=re.IGNORECASE)
+    if m:
+        desc = m.group(1).strip()
+        desc = re.sub(r"\s+(?=(?:part\s*2\s*:))", "\n", desc, count=1, flags=re.IGNORECASE)
+        result["parsed_part_description"] = desc.strip()
+        return result
+
+    # Standard product description
+    m = re.search(
+        r"(?:(?:part\s*description)|(?:izdelek)|(?:product)|(?:produkt))\s*:\s*(.+)$",
+        flat,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        desc = clean_parsed_value(m.group(1))
+        desc = re.sub(r"\s+(?=(?:part\s*2\s*:))", "\n", desc, count=1, flags=re.IGNORECASE)
+        result["parsed_part_description"] = desc.strip()
+        return result
+
+    # Fallback: anything after tool number if it looks like trailing description
+    m = re.search(
+        r"(?:tool\s*number|tool\s*no\.?|orodje\s*št\.?|orodje\s*st\.?|wkz\.\s*no\.?)\s*:\s*[A-Za-z0-9./_-]+\s+(.+)$",
+        flat,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        desc = clean_parsed_value(m.group(1))
+        desc = re.sub(r"\s+(?=(?:part\s*2\s*:))", "\n", desc, count=1, flags=re.IGNORECASE)
+        result["parsed_part_description"] = desc.strip()
 
     return result
 
@@ -327,6 +365,21 @@ def place_path_in_box(base_path, scale, box_x, box_y, box_w, box_h, align="left"
     return path.transformed(Affine2D().translate(tx, ty))
 
 
+def place_path_top_aligned(base_path, scale, box_x, top_y, box_w, align="left", pad_x=0.0):
+    path = base_path.transformed(Affine2D().scale(scale, -scale))
+    bbox = path.get_extents()
+
+    if align == "center":
+        tx = box_x + (box_w - bbox.width) / 2.0 - bbox.x0
+    elif align == "right":
+        tx = box_x + box_w - pad_x - bbox.x1
+    else:
+        tx = box_x + pad_x - bbox.x0
+
+    ty = top_y - bbox.y0
+    return path.transformed(Affine2D().translate(tx, ty))
+
+
 def fit_text_block(
     text: str,
     desired_h_mm: float,
@@ -338,8 +391,11 @@ def fit_text_block(
     align: str = "left",
     pad_x: float = 0.0,
     max_lines: int = 1,
+    first_line_anchor_h=None,
 ):
-    raw = normalize_space(text)
+    raw_original = "" if text is None or pd.isna(text) else str(text).strip()
+    raw_single = normalize_space(raw_original.replace("\n", " "))
+
     empty = {
         "texts": [],
         "paths": [],
@@ -348,13 +404,13 @@ def fit_text_block(
         "line_boxes": [],
         "line_count": 0,
     }
-    if not raw:
+    if not raw_original:
         return empty
 
     single_final, single_base, _, single_scale, single_used_h = fit_text_for_box(
-        raw, desired_h_mm, box_w, box_h, weight
+        raw_single, desired_h_mm, box_w, box_h, weight
     )
-    single_complete = single_final == raw
+    single_complete = single_final == raw_single
 
     best = {
         "texts": [single_final],
@@ -371,7 +427,7 @@ def fit_text_block(
         line_box_h = (box_h - gap) / 2.0
 
         if line_box_h >= MIN_TEXT_HEIGHT_MM:
-            for line1, line2 in build_two_line_candidates(text):
+            for line1, line2 in build_two_line_candidates(raw_original):
                 f1 = fit_text_for_box(line1, desired_h_mm, box_w, line_box_h, weight)
                 f2 = fit_text_for_box(line2, desired_h_mm, box_w, line_box_h, weight)
 
@@ -425,27 +481,45 @@ def fit_text_block(
         used_height_summary = best["used_heights"][0] if best["used_heights"] else 0.0
 
     else:
-        top_y = box_y
-        bottom_y = box_y + best["line_box_h"] + best["gap"]
+        h1 = best["used_heights"][0]
+        h2 = best["used_heights"][1]
+        gap = best["gap"]
 
-        for i, line_y in enumerate([top_y, bottom_y]):
-            placed = place_path_in_box(
-                best["bases"][i],
-                best["scales"][i],
-                box_x,
-                line_y,
-                box_w,
-                best["line_box_h"],
-                align=align,
-                pad_x=pad_x,
-            ) if best["bases"][i] is not None else None
+        anchor_h = first_line_anchor_h if first_line_anchor_h is not None else best["line_box_h"]
+        anchor_h = min(anchor_h, box_h)
 
-            if placed is not None:
-                paths.append(placed)
+        first_line_top = box_y + max(0.0, (anchor_h - h1) / 2.0)
+        second_line_top = first_line_top + h1 + gap
 
-            line_boxes.append((box_x, line_y, box_w, best["line_box_h"]))
+        placed1 = place_path_top_aligned(
+            best["bases"][0],
+            best["scales"][0],
+            box_x,
+            first_line_top,
+            box_w,
+            align=align,
+            pad_x=pad_x,
+        ) if best["bases"][0] is not None else None
 
-        used_height_summary = sum(best["used_heights"]) + best["gap"]
+        placed2 = place_path_top_aligned(
+            best["bases"][1],
+            best["scales"][1],
+            box_x,
+            second_line_top,
+            box_w,
+            align=align,
+            pad_x=pad_x,
+        ) if best["bases"][1] is not None else None
+
+        if placed1 is not None:
+            paths.append(placed1)
+        if placed2 is not None:
+            paths.append(placed2)
+
+        line_boxes.append((box_x, first_line_top, box_w, h1))
+        line_boxes.append((box_x, second_line_top, box_w, h2))
+
+        used_height_summary = (second_line_top - box_y) + h2
 
     return {
         "texts": best["texts"],
@@ -859,6 +933,7 @@ def generate_svg(
             align="left",
             pad_x=0.0,
             max_lines=AUTO_WRAP_MAX_LINES,
+            first_line_anchor_h=ROW3_H if i == 2 else right_boxes[i]["row"]["h"],
         )
 
         for p in left_block["paths"]:
@@ -1027,6 +1102,7 @@ def generate_dxf(
             align="left",
             pad_x=0.0,
             max_lines=max_lines,
+            first_line_anchor_h=ROW3_H if row_y == row3_y else row_h,
         )
 
         for i, final_text in enumerate(block["texts"]):
@@ -1231,7 +1307,7 @@ with tab_single:
         st.subheader("Text")
         owner = st.text_input("Property of", value=DEFAULT_OWNER, key="single_owner")
         tool_number = st.text_input("Tool number", value=DEFAULT_TOOL, key="single_tool")
-        part_desc = st.text_input("Part description", value=DEFAULT_PART, key="single_part")
+        part_desc = st.text_area("Part description", value=DEFAULT_PART, key="single_part", height=90)
 
         mode_single = st.selectbox("Mode", ALLOWED_MODES, index=ALLOWED_MODES.index(mode_default), key="single_mode")
         hole_dia_single = st.number_input("Hole diameter override (mm)", min_value=2.0, max_value=5.0, value=float(hole_dia_default), step=0.1)
@@ -1467,7 +1543,6 @@ with tab_custom:
 
                 custom_df = normalize_custom_template_df(raw_custom_df)
 
-                # lower CSV rows = higher priority
                 custom_df = custom_df.iloc[::-1].reset_index(drop=True)
                 custom_df.insert(0, "priority", range(1, len(custom_df) + 1))
             else:
@@ -1654,6 +1729,9 @@ napis_na -> parse:
 - tool_number
 - part_description
 
+Supported text examples:
+Property of: Husqvarna AB Tool number: 89202 Part 1: Charging Plate P23 left (id. 33202) Part 2: Charging Plate P23 right (id. 33203)
+
 Fallback columns
 lastnik -> property_of
 orodje or sifra_orodja -> tool_number
@@ -1683,6 +1761,7 @@ Custom Excel tab behavior:
 - all generated files are packed into one ZIP
 - values are parsed from `napis_na` first, then fallback to separate columns
 - long text automatically tries to fit in 2 lines when needed
+- 2-line text starts at the same top line and then moves down
 
 If you use old .xls files, install xlrd:
 pip install xlrd
