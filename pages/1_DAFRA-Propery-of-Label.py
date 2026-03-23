@@ -68,6 +68,9 @@ PART_STACK_GAP = 0.35
 PART_STACK_BOTTOM_MARGIN = 0.7
 MULTILINE_GAP_MM = 0.35
 
+# Trigger: if property_of string is longer than this, allow 2-line wrap
+PROPERTY_OF_MULTILINE_TRIGGER_LEN = 18
+
 ALLOWED_MODES = ["Normal", "Anodized aluminium (negative)"]
 
 CUSTOM_REQUIRED_ALIASES = {
@@ -386,6 +389,7 @@ def fit_text_block(
     pad_x: float = 0.0,
     max_lines: int = 1,
     first_line_anchor_h=None,
+    force_single_if_fits: bool = False,
 ):
     raw_original = "" if text is None or pd.isna(text) else str(text).strip()
     raw_single = normalize_space(raw_original.replace("\n", " "))
@@ -416,7 +420,11 @@ def fit_text_block(
         "score": (1000 if single_complete else 0) + single_used_h * 100 + len(single_final),
     }
 
-    if max_lines >= 2 and box_h >= (MIN_TEXT_HEIGHT_MM * 2 + MULTILINE_GAP_MM):
+    # Only attempt 2-line wrap if the single-line result was truncated or
+    # required heavy downscaling. When force_single_if_fits=True, a complete
+    # single-line fit wins unconditionally — prevents short strings like
+    # "Husqvarna AB" from splitting just because 2-line scores higher.
+    if not (force_single_if_fits and single_complete) and max_lines >= 2 and box_h >= (MIN_TEXT_HEIGHT_MM * 2 + MULTILINE_GAP_MM):
         gap = min(MULTILINE_GAP_MM, max(0.25, box_h * 0.08))
         line_box_h = (box_h - gap) / 2.0
 
@@ -958,50 +966,103 @@ def generate_svg(
         "stacked_part": use_stacked_part,
     }
 
-    # rows 1 and 2: always single-line values
-    for i, (label_txt, value_txt, req_h, row_y, row_h) in enumerate([
-        (rows[0][0], rows[0][1], fs1, row1_y, ROW1_H),
-        (rows[1][0], rows[1][1], fs2, row2_y, ROW2_H),
-    ]):
-        left_block = fit_text_block(
-            text=label_txt,
-            desired_h_mm=req_h,
-            box_x=left_x,
-            box_y=row_y,
-            box_w=left_w,
-            box_h=row_h,
-            weight="bold",
-            align="left",
-            pad_x=0.0,
-            max_lines=1,
-        )
-        right_block = fit_text_block(
-            text=value_txt,
-            desired_h_mm=req_h,
-            box_x=right_x,
-            box_y=row_y,
-            box_w=right_w,
-            box_h=row_h,
-            weight="regular",
-            align="left",
-            pad_x=0.0,
-            max_lines=1,
-        )
+    # -------------------------------------------------------
+    # Row 0: "Property of:" — label single-line, value up to 2 lines
+    # box_h for the value extends to row2_y so a 2nd line has room
+    # first_line_anchor_h=ROW1_H keeps line 1 vertically aligned
+    # with the "Property of:" label in the left column.
+    # -------------------------------------------------------
+    row0_label_txt, row0_value_txt = rows[0]
+    row0_value_box_h = row2_y - row1_y  # available height before row 2 starts
 
-        for p in left_block["paths"]:
-            d = mpl_path_to_svg_d(p)
-            if d:
-                all_svg_paths.append(d)
-        for p in right_block["paths"]:
-            d = mpl_path_to_svg_d(p)
-            if d:
-                all_svg_paths.append(d)
+    left_block_0 = fit_text_block(
+        text=row0_label_txt,
+        desired_h_mm=fs1,
+        box_x=left_x,
+        box_y=row1_y,
+        box_w=left_w,
+        box_h=ROW1_H,
+        weight="bold",
+        align="left",
+        pad_x=0.0,
+        max_lines=1,
+    )
+    right_block_0 = fit_text_block(
+        text=row0_value_txt,
+        desired_h_mm=fs1,
+        box_x=right_x,
+        box_y=row1_y,
+        box_w=right_w,
+        box_h=row0_value_box_h,
+        weight="regular",
+        align="left",
+        pad_x=0.0,
+        max_lines=2,
+        first_line_anchor_h=ROW1_H,
+        force_single_if_fits=True,
+    )
 
-        meta["left_sizes"].append(left_block["used_height_summary"])
-        meta["right_sizes"].append(right_block["used_height_summary"])
-        meta["left_texts"].append(" / ".join(left_block["texts"]))
-        meta["right_texts"].append(" / ".join(right_block["texts"]))
+    for p in left_block_0["paths"]:
+        d = mpl_path_to_svg_d(p)
+        if d:
+            all_svg_paths.append(d)
+    for p in right_block_0["paths"]:
+        d = mpl_path_to_svg_d(p)
+        if d:
+            all_svg_paths.append(d)
 
+    meta["left_sizes"].append(left_block_0["used_height_summary"])
+    meta["right_sizes"].append(right_block_0["used_height_summary"])
+    meta["left_texts"].append(" / ".join(left_block_0["texts"]))
+    meta["right_texts"].append(" / ".join(right_block_0["texts"]))
+
+    # -------------------------------------------------------
+    # Row 1: "Tool number:" — both sides single-line only
+    # -------------------------------------------------------
+    row1_label_txt, row1_value_txt = rows[1]
+
+    left_block_1 = fit_text_block(
+        text=row1_label_txt,
+        desired_h_mm=fs2,
+        box_x=left_x,
+        box_y=row2_y,
+        box_w=left_w,
+        box_h=ROW2_H,
+        weight="bold",
+        align="left",
+        pad_x=0.0,
+        max_lines=1,
+    )
+    right_block_1 = fit_text_block(
+        text=row1_value_txt,
+        desired_h_mm=fs2,
+        box_x=right_x,
+        box_y=row2_y,
+        box_w=right_w,
+        box_h=ROW2_H,
+        weight="regular",
+        align="left",
+        pad_x=0.0,
+        max_lines=1,
+    )
+
+    for p in left_block_1["paths"]:
+        d = mpl_path_to_svg_d(p)
+        if d:
+            all_svg_paths.append(d)
+    for p in right_block_1["paths"]:
+        d = mpl_path_to_svg_d(p)
+        if d:
+            all_svg_paths.append(d)
+
+    meta["left_sizes"].append(left_block_1["used_height_summary"])
+    meta["right_sizes"].append(right_block_1["used_height_summary"])
+    meta["left_texts"].append(" / ".join(left_block_1["texts"]))
+    meta["right_texts"].append(" / ".join(right_block_1["texts"]))
+
+    # -------------------------------------------------------
+    # Row 2: "Part description:"
+    # -------------------------------------------------------
     if use_stacked_part:
         stack = get_part_stack_layout(left_x, border_offset, row3_y)
         part_lines = split_part_description_lines(part_desc)
@@ -1132,7 +1193,7 @@ def generate_svg(
             guides_svg = f"""
             <g fill="none" stroke="{colors['guide_stroke']}" stroke-width="0.12" stroke-dasharray="0.8,0.8" opacity="0.75">
                 <rect x="{left_x}" y="{row1_y}" width="{left_w}" height="{ROW1_H}" />
-                <rect x="{right_x}" y="{row1_y}" width="{right_w}" height="{ROW1_H}" />
+                <rect x="{right_x}" y="{row1_y}" width="{right_w}" height="{row2_y - row1_y}" />
                 <rect x="{left_x}" y="{row2_y}" width="{left_w}" height="{ROW2_H}" />
                 <rect x="{right_x}" y="{row2_y}" width="{right_w}" height="{ROW2_H}" />
                 <rect x="{stack['label_x']}" y="{stack['label_y']}" width="{stack['label_w']}" height="{stack['label_h']}" />
@@ -1145,7 +1206,7 @@ def generate_svg(
             guides_svg = f"""
             <g fill="none" stroke="{colors['guide_stroke']}" stroke-width="0.12" stroke-dasharray="0.8,0.8" opacity="0.75">
                 <rect x="{left_x}" y="{row1_y}" width="{left_w}" height="{ROW1_H}" />
-                <rect x="{right_x}" y="{row1_y}" width="{right_w}" height="{ROW1_H}" />
+                <rect x="{right_x}" y="{row1_y}" width="{right_w}" height="{row2_y - row1_y}" />
                 <rect x="{left_x}" y="{row2_y}" width="{left_w}" height="{ROW2_H}" />
                 <rect x="{right_x}" y="{row2_y}" width="{right_w}" height="{ROW2_H}" />
                 <rect x="{left_x}" y="{row3_y}" width="{left_w}" height="{ROW3_H}" />
@@ -1243,7 +1304,7 @@ def generate_dxf(
     msp.add_circle((hole_left_x, hole_y), hole_r, dxfattribs={"layer": "HOLES"})
     msp.add_circle((hole_right_x, hole_y), hole_r, dxfattribs={"layer": "HOLES"})
 
-    def add_text_block_dxf(box_x, box_w, row_y, row_h, text_value, desired_h, weight, max_lines=1, first_line_anchor_h=None):
+    def add_text_block_dxf(box_x, box_w, row_y, row_h, text_value, desired_h, weight, max_lines=1, first_line_anchor_h=None, force_single_if_fits=False):
         block = fit_text_block(
             text=text_value,
             desired_h_mm=desired_h,
@@ -1256,6 +1317,7 @@ def generate_dxf(
             pad_x=0.0,
             max_lines=max_lines,
             first_line_anchor_h=first_line_anchor_h,
+            force_single_if_fits=force_single_if_fits,
         )
 
         for i, final_text in enumerate(block["texts"]):
@@ -1275,10 +1337,20 @@ def generate_dxf(
             )
             t.set_placement((line_box_x, y_dxf), align=TextEntityAlignment.LEFT)
 
-    # rows 1 and 2 single-line only
+    # Row 0: "Property of:" — label single-line, value up to 2 lines
+    # Value box height extends to row2_y so a wrapped 2nd line has room.
+    # first_line_anchor_h=ROW1_H keeps line 1 aligned with the label.
+    row0_value_box_h = row2_y - row1_y
     add_text_block_dxf(left_x, left_w, row1_y, ROW1_H, rows[0][0], fs1, "bold", max_lines=1)
-    add_text_block_dxf(right_x, right_w, row1_y, ROW1_H, rows[0][1], fs1, "regular", max_lines=1)
+    add_text_block_dxf(
+        right_x, right_w, row1_y, row0_value_box_h,
+        rows[0][1], fs1, "regular",
+        max_lines=2,
+        first_line_anchor_h=ROW1_H,
+        force_single_if_fits=True,
+    )
 
+    # Row 1: "Tool number:" — both sides single-line only
     add_text_block_dxf(left_x, left_w, row2_y, ROW2_H, rows[1][0], fs2, "bold", max_lines=1)
     add_text_block_dxf(right_x, right_w, row2_y, ROW2_H, rows[1][1], fs2, "regular", max_lines=1)
 
@@ -1939,7 +2011,11 @@ izdelek -> part_description
 with st.expander("Notes"):
     st.write(
         """
-Property of and Tool number stay single-line only.
+Property of stays single-line for short names. For long company names (e.g. "DAFRA kontakt
+tehnologija d.o.o.") it automatically wraps to 2 lines — the first line stays vertically
+aligned with the "Property of:" label, and the second line appears directly below it.
+
+Tool number stays single-line only.
 
 Very long Part description automatically switches to stacked layout:
 
