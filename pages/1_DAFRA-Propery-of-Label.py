@@ -25,34 +25,19 @@ st.set_page_config(
     layout="wide",
 )
 
-# Inject subtle industrial-style CSS polish
 st.markdown("""
 <style>
-/* Tighten up the sidebar */
 section[data-testid="stSidebar"] { padding-top: 1rem; }
-
-/* Download buttons: make them stand out */
 div[data-testid="stDownloadButton"] > button {
     font-weight: 600;
     letter-spacing: 0.02em;
 }
-
-/* Tab label styling */
 div[data-testid="stTabs"] button[role="tab"] {
     font-weight: 600;
     font-size: 0.88rem;
     letter-spacing: 0.03em;
 }
-
-/* Info / success / warning boxes: reduce visual noise */
-div[data-testid="stAlert"] {
-    border-radius: 6px;
-}
-
-/* Char counter caption: subtle */
-.char-counter { color: #888; font-size: 0.78rem; margin-top: -10px; }
-
-/* Section dividers */
+div[data-testid="stAlert"] { border-radius: 6px; }
 hr { margin: 0.75rem 0; border-color: #e0e0e0; }
 </style>
 """, unsafe_allow_html=True)
@@ -63,14 +48,14 @@ hr { margin: 0.75rem 0; border-color: #e0e0e0; }
 LABEL_W = 78.5
 LABEL_H = 21.0
 
-DEFAULT_OWNER        = "Stihl Group"
-DEFAULT_TOOL         = "89193"
-DEFAULT_PART         = "Steckzunge BA13-431-2100-A (id. 33193)"
+DEFAULT_OWNER         = "Stihl Group"
+DEFAULT_TOOL          = "89193"
+DEFAULT_PART          = "Steckzunge BA13-431-2100-A (id. 33193)"
 
-DEFAULT_MODE         = "Anodized aluminium (negative)"
-DEFAULT_HOLE_DIA     = 3.2
-DEFAULT_HOLE_OFFSET  = 4.3
-DEFAULT_CORNER_R     = 2.2
+DEFAULT_MODE          = "Anodized aluminium (negative)"
+DEFAULT_HOLE_DIA      = 3.2
+DEFAULT_HOLE_OFFSET   = 4.3
+DEFAULT_CORNER_R      = 2.2
 DEFAULT_BORDER_OFFSET = 0.25
 
 DEFAULT_LEFT_X  = 8.4
@@ -89,16 +74,16 @@ DEFAULT_FS1 = 2.8
 DEFAULT_FS2 = 2.8
 DEFAULT_FS3 = 1.8
 
-MIN_TEXT_HEIGHT_MM  = 1.2
-RIGHT_MARGIN        = 2.2
-VECTOR_FONT_FAMILY  = "DejaVu Sans Condensed"
+MIN_TEXT_HEIGHT_MM   = 1.2
+RIGHT_MARGIN         = 2.2
+VECTOR_FONT_FAMILY   = "DejaVu Sans Condensed"
 
-PART_STACK_TRIGGER_LEN  = 52
-PART_STACK_INDENT       = 2.1
-PART_STACK_LABEL_H      = 2.0
-PART_STACK_GAP          = 0.35
+PART_STACK_TRIGGER_LEN   = 52
+PART_STACK_INDENT        = 2.1
+PART_STACK_LABEL_H       = 2.0
+PART_STACK_GAP           = 0.35
 PART_STACK_BOTTOM_MARGIN = 0.7
-MULTILINE_GAP_MM        = 0.35
+MULTILINE_GAP_MM         = 0.35
 
 PROPERTY_OF_MULTILINE_TRIGGER_LEN = 18
 
@@ -119,7 +104,7 @@ CUSTOM_OPTIONAL_DISPLAY = [
 
 
 # ============================================================
-# Utility / helper functions
+# Utility helpers
 # ============================================================
 
 def safe_filename(text: str) -> str:
@@ -170,7 +155,7 @@ def clean_parsed_value(text: str) -> str:
 
 def unique_pairs(pairs):
     seen = set()
-    out = []
+    out  = []
     for a, b in pairs:
         a = a.strip()
         b = b.strip()
@@ -201,7 +186,7 @@ def build_two_line_candidates(text: str):
     for m in re.finditer(r"\s+(?=(?:part\s*2\s*:))", flat, flags=re.IGNORECASE):
         pairs.append((flat[:m.start()].strip(), flat[m.start():].strip()))
 
-    for m in re.finditer(r"\s+(?=(?:2[\.\)]|2[-–]))", flat):
+    for m in re.finditer(r"\s+(?=(?:2[\.\)]|2[-\u2013]))", flat):
         pairs.append((flat[:m.start()].strip(), flat[m.start():].strip()))
 
     for pattern in [r"\s*[;|]\s*", r"\s+/\s+", r"\s+-\s+", r",\s+"]:
@@ -210,7 +195,7 @@ def build_two_line_candidates(text: str):
 
     words = flat.split()
     if len(words) >= 2:
-        best_i = 1
+        best_i    = 1
         best_diff = 10**9
         for i in range(1, len(words)):
             left  = " ".join(words[:i])
@@ -218,7 +203,7 @@ def build_two_line_candidates(text: str):
             diff  = abs(len(left) - len(right))
             if diff < best_diff:
                 best_diff = diff
-                best_i = i
+                best_i    = i
         pairs.append((" ".join(words[:best_i]), " ".join(words[best_i:])))
 
     return unique_pairs(pairs)
@@ -228,8 +213,8 @@ def parse_napis_na(text: str) -> dict:
     raw = "" if text is None or pd.isna(text) else str(text)
     if not raw.strip():
         return {
-            "parsed_property_of":    "",
-            "parsed_tool_number":    "",
+            "parsed_property_of":     "",
+            "parsed_tool_number":     "",
             "parsed_part_description": "",
         }
 
@@ -239,14 +224,14 @@ def parse_napis_na(text: str) -> dict:
     flat = normalize_space(s)
 
     result = {
-        "parsed_property_of":    "",
-        "parsed_tool_number":    "",
+        "parsed_property_of":     "",
+        "parsed_tool_number":     "",
         "parsed_part_description": "",
     }
 
     m = re.search(
         r"(?:property\s*of|lastnik|possessor|eigentümer)\s*:\s*(.+?)"
-        r"(?=(?:tool\s*number|tool\s*no\.?|orodje\s*št\.?|orodje\s*st\.?|wkz\.\s*no\.?"
+        r"(?=(?:tool\s*number|tool\s*no\.?|orodje\s*\u0161t\.?|orodje\s*st\.?|wkz\.\s*no\.?"
         r"|part\s*1\s*:|part\s*description\s*:|izdelek\s*:|product\s*:|produkt\s*:|$))",
         flat, flags=re.IGNORECASE,
     )
@@ -254,7 +239,7 @@ def parse_napis_na(text: str) -> dict:
         result["parsed_property_of"] = clean_parsed_value(m.group(1))
 
     m = re.search(
-        r"(?:tool\s*number|tool\s*no\.?|orodje\s*št\.?|orodje\s*st\.?|wkz\.\s*no\.?)"
+        r"(?:tool\s*number|tool\s*no\.?|orodje\s*\u0161t\.?|orodje\s*st\.?|wkz\.\s*no\.?)"
         r"\s*:\s*([A-Za-z0-9./_-]+)",
         flat, flags=re.IGNORECASE,
     )
@@ -279,7 +264,7 @@ def parse_napis_na(text: str) -> dict:
         return result
 
     m = re.search(
-        r"(?:tool\s*number|tool\s*no\.?|orodje\s*št\.?|orodje\s*st\.?|wkz\.\s*no\.?)"
+        r"(?:tool\s*number|tool\s*no\.?|orodje\s*\u0161t\.?|orodje\s*st\.?|wkz\.\s*no\.?)"
         r"\s*:\s*[A-Za-z0-9./_-]+\s+(.+)$",
         flat, flags=re.IGNORECASE,
     )
@@ -313,8 +298,8 @@ def get_mode_colors(mode: str):
 
 def build_rows(owner: str, tool_number: str, part_desc: str):
     return [
-        ("Property of:",     owner),
-        ("Tool number:",     tool_number),
+        ("Property of:",      owner),
+        ("Tool number:",      tool_number),
         ("Part description:", part_desc),
     ]
 
@@ -339,10 +324,7 @@ def fit_text_for_box(text: str, desired_h_mm: float, box_w_mm: float, box_h_mm: 
         return "", None, None, 1.0, 0.0
 
     for cut in range(0, len(raw) + 1):
-        if cut == 0:
-            candidate = raw
-        else:
-            candidate = raw[: max(0, len(raw) - cut)].rstrip() + "..."
+        candidate = raw if cut == 0 else raw[: max(0, len(raw) - cut)].rstrip() + "..."
 
         base_path, bbox = make_base_text_path(candidate, weight)
         if base_path is None or bbox is None:
@@ -354,13 +336,13 @@ def fit_text_for_box(text: str, desired_h_mm: float, box_w_mm: float, box_h_mm: 
         if bbox.width * scale <= box_w_mm:
             return candidate, base_path, bbox, scale, bbox.height * scale
 
-        scale_w            = box_w_mm / bbox.width
+        scale_w             = box_w_mm / bbox.width
         height_at_width_fit = bbox.height * scale_w
 
         if height_at_width_fit >= MIN_TEXT_HEIGHT_MM and height_at_width_fit <= box_h_mm:
             return candidate, base_path, bbox, scale_w, height_at_width_fit
 
-    fallback   = "..."
+    fallback  = "..."
     base_path, bbox = make_base_text_path(fallback, weight)
     if base_path is None or bbox is None:
         return "", None, None, 1.0, 0.0
@@ -373,14 +355,12 @@ def fit_text_for_box(text: str, desired_h_mm: float, box_w_mm: float, box_h_mm: 
 def place_path_in_box(base_path, scale, box_x, box_y, box_w, box_h, align="left", pad_x=0.0):
     path = base_path.transformed(Affine2D().scale(scale, -scale))
     bbox = path.get_extents()
-
     if align == "center":
         tx = box_x + (box_w - bbox.width) / 2.0 - bbox.x0
     elif align == "right":
         tx = box_x + box_w - pad_x - bbox.x1
     else:
         tx = box_x + pad_x - bbox.x0
-
     ty = box_y + (box_h - bbox.height) / 2.0 - bbox.y0
     return path.transformed(Affine2D().translate(tx, ty))
 
@@ -388,14 +368,12 @@ def place_path_in_box(base_path, scale, box_x, box_y, box_w, box_h, align="left"
 def place_path_top_aligned(base_path, scale, box_x, top_y, box_w, align="left", pad_x=0.0):
     path = base_path.transformed(Affine2D().scale(scale, -scale))
     bbox = path.get_extents()
-
     if align == "center":
         tx = box_x + (box_w - bbox.width) / 2.0 - bbox.x0
     elif align == "right":
         tx = box_x + box_w - pad_x - bbox.x1
     else:
         tx = box_x + pad_x - bbox.x0
-
     ty = top_y - bbox.y0
     return path.transformed(Affine2D().translate(tx, ty))
 
@@ -457,24 +435,19 @@ def fit_text_block(
             for line1, line2 in build_two_line_candidates(raw_original):
                 f1 = fit_text_for_box(line1, desired_h_mm, box_w, line_box_h, weight)
                 f2 = fit_text_for_box(line2, desired_h_mm, box_w, line_box_h, weight)
-
                 t1, b1, _, s1, h1 = f1
                 t2, b2, _, s2, h2 = f2
-
                 if not t1 or not t2:
                     continue
-
                 complete = t1 == line1 and t2 == line2
-                score = (
+                score    = (
                     (2000 if complete else 0)
                     + min(h1, h2) * 100
                     + len(t1) + len(t2)
                     - abs(len(line1) - len(line2)) * 0.15
                 )
-
                 if complete and not single_complete:
                     score += 500
-
                 if score > best["score"]:
                     best = {
                         "texts":        [t1, t2],
@@ -505,10 +478,9 @@ def fit_text_block(
         h1  = best["used_heights"][0]
         h2  = best["used_heights"][1]
         gap = best["gap"]
-
-        anchor_h       = first_line_anchor_h if first_line_anchor_h is not None else best["line_box_h"]
-        anchor_h       = min(anchor_h, box_h)
-        first_line_top = box_y + max(0.0, (anchor_h - h1) / 2.0)
+        anchor_h        = first_line_anchor_h if first_line_anchor_h is not None else best["line_box_h"]
+        anchor_h        = min(anchor_h, box_h)
+        first_line_top  = box_y + max(0.0, (anchor_h - h1) / 2.0)
         second_line_top = first_line_top + h1 + gap
 
         placed1 = (
@@ -525,15 +497,12 @@ def fit_text_block(
             )
             if best["bases"][1] is not None else None
         )
-
         if placed1 is not None:
             paths.append(placed1)
         if placed2 is not None:
             paths.append(placed2)
-
         line_boxes.append((box_x, first_line_top,  box_w, h1))
         line_boxes.append((box_x, second_line_top, box_w, h2))
-
         used_height_summary = (second_line_top - box_y) + h2
 
     return {
@@ -595,15 +564,15 @@ def parse_mode(value, default_mode):
     if not v:
         return default_mode
     lookup = {
-        "normal":                           "Normal",
-        "standard":                         "Normal",
-        "default":                          "Normal",
-        "negative":                         "Anodized aluminium (negative)",
-        "anodized":                         "Anodized aluminium (negative)",
-        "anodized_aluminium":               "Anodized aluminium (negative)",
-        "anodized aluminium":               "Anodized aluminium (negative)",
-        "anodized aluminium (negative)":    "Anodized aluminium (negative)",
-        "black":                            "Anodized aluminium (negative)",
+        "normal":                        "Normal",
+        "standard":                      "Normal",
+        "default":                       "Normal",
+        "negative":                      "Anodized aluminium (negative)",
+        "anodized":                      "Anodized aluminium (negative)",
+        "anodized_aluminium":            "Anodized aluminium (negative)",
+        "anodized aluminium":            "Anodized aluminium (negative)",
+        "anodized aluminium (negative)": "Anodized aluminium (negative)",
+        "black":                         "Anodized aluminium (negative)",
     }
     return lookup.get(v.lower(), default_mode if v not in ALLOWED_MODES else v)
 
@@ -649,23 +618,17 @@ def make_unique_base_names(names):
 def make_preview_svg(svg_text: str, label_w_mm: float, label_h_mm: float, px_per_mm: float) -> str:
     preview_w_px = label_w_mm * px_per_mm
     preview_h_px = label_h_mm * px_per_mm
-    svg_preview = re.sub(r'width="[^"]+"',  f'width="{preview_w_px}px"',  svg_text, count=1)
-    svg_preview = re.sub(r'height="[^"]+"', f'height="{preview_h_px}px"', svg_preview, count=1)
+    svg_preview  = re.sub(r'width="[^"]+"',  f'width="{preview_w_px}px"',  svg_text, count=1)
+    svg_preview  = re.sub(r'height="[^"]+"', f'height="{preview_h_px}px"', svg_preview, count=1)
     return svg_preview
 
 
-def selection_editor(
-    df: pd.DataFrame,
-    key: str,
-    display_columns: list,
-    checkbox_label: str = "Print",
-):
+def selection_editor(df: pd.DataFrame, key: str, display_columns: list, checkbox_label: str = "Print"):
     work_df = df.copy()
     if "print" not in work_df.columns:
         work_df.insert(0, "print", False)
-
     column_order = ["print"] + [c for c in display_columns if c in work_df.columns]
-    edited_df = st.data_editor(
+    return st.data_editor(
         work_df[column_order],
         key=key,
         hide_index=True,
@@ -680,15 +643,13 @@ def selection_editor(
             )
         },
     )
-    return edited_df
 
 
 def render_svg_preview_card(svg_output: str, mode: str, preview_scale: float):
-    colors        = get_mode_colors(mode)
-    preview_svg   = make_preview_svg(svg_output, LABEL_W, LABEL_H, preview_scale)
+    colors         = get_mode_colors(mode)
+    preview_svg    = make_preview_svg(svg_output, LABEL_W, LABEL_H, preview_scale)
     preview_height = int(LABEL_H * preview_scale + 80)
-
-    preview_html = f"""
+    preview_html   = f"""
     <div style="
         background:{colors['preview_bg']};
         padding:20px;
@@ -708,33 +669,19 @@ def render_svg_preview_card(svg_output: str, mode: str, preview_scale: float):
 
 
 # ============================================================
-# Shared layout computation  ← NEW: single source of truth
+# Shared layout computation — single source of truth for SVG + DXF
 # ============================================================
 
 def compute_label_layout(
-    owner: str,
-    tool_number: str,
-    part_desc: str,
-    left_x: float,
-    left_w: float,
-    right_x: float,
-    row1_y: float,
-    row2_y: float,
-    row3_y: float,
-    fs1: float,
-    fs2: float,
-    fs3: float,
-    border_offset: float,
+    owner, tool_number, part_desc,
+    left_x, left_w, right_x,
+    row1_y, row2_y, row3_y,
+    fs1, fs2, fs3,
+    border_offset,
 ):
-    """
-    Returns all text blocks and derived geometry shared by generate_svg
-    and generate_dxf.  Both renderers call this once instead of duplicating
-    the layout maths.
-    """
     use_stacked_part = should_use_stacked_part_layout(part_desc)
     rows             = build_rows(owner, tool_number, part_desc)
     right_w          = LABEL_W - right_x - RIGHT_MARGIN
-
     row0_value_box_h = row2_y - row1_y
 
     left_block_0 = fit_text_block(
@@ -748,7 +695,6 @@ def compute_label_layout(
         weight="regular", max_lines=2,
         first_line_anchor_h=ROW1_H, force_single_if_fits=True,
     )
-
     left_block_1 = fit_text_block(
         text=rows[1][0], desired_h_mm=fs2,
         box_x=left_x, box_y=row2_y, box_w=left_w, box_h=ROW2_H,
@@ -760,7 +706,6 @@ def compute_label_layout(
         weight="regular", max_lines=1,
     )
 
-    # Row 2: part description (two layouts)
     if use_stacked_part:
         stack      = get_part_stack_layout(left_x, border_offset, row3_y)
         part_lines = split_part_description_lines(part_desc)
@@ -787,10 +732,13 @@ def compute_label_layout(
             box_y=stack["value_y"] + stack["per_line_h"] + stack["line_gap"],
             box_w=stack["value_w"], box_h=stack["per_line_h"],
             weight="regular", max_lines=1,
-        ) if part_lines[1] else {"paths": [], "texts": [], "used_height_summary": 0.0, "line_boxes": [], "used_heights": []}
+        ) if part_lines[1] else {
+            "paths": [], "texts": [], "used_height_summary": 0.0,
+            "line_boxes": [], "used_heights": [],
+        }
 
         row2_blocks = {
-            "stacked": True,
+            "stacked":      True,
             "stack":        stack,
             "part_lines":   part_lines,
             "label_block":  label_block,
@@ -798,22 +746,21 @@ def compute_label_layout(
             "line2_block":  line2_block,
         }
     else:
-        part_h      = max(ROW3_H, LABEL_H - row3_y - max(border_offset, PART_STACK_BOTTOM_MARGIN))
-        left_block  = fit_text_block(
+        part_h    = max(ROW3_H, LABEL_H - row3_y - max(border_offset, PART_STACK_BOTTOM_MARGIN))
+        left_blk  = fit_text_block(
             text="Part description:", desired_h_mm=fs3,
             box_x=left_x, box_y=row3_y, box_w=left_w, box_h=ROW3_H,
             weight="bold", max_lines=1,
         )
-        right_block = fit_text_block(
+        right_blk = fit_text_block(
             text=part_desc, desired_h_mm=fs3,
             box_x=right_x, box_y=row3_y, box_w=right_w, box_h=part_h,
-            weight="regular", max_lines=2,
-            first_line_anchor_h=ROW3_H,
+            weight="regular", max_lines=2, first_line_anchor_h=ROW3_H,
         )
         row2_blocks = {
             "stacked":     False,
-            "left_block":  left_block,
-            "right_block": right_block,
+            "left_block":  left_blk,
+            "right_block": right_blk,
         }
 
     return {
@@ -832,7 +779,7 @@ def compute_label_layout(
 
 
 # ============================================================
-# Part-description stacked layout helpers
+# Stacked part helpers
 # ============================================================
 
 def split_part_description_lines(part_desc: str):
@@ -844,18 +791,14 @@ def split_part_description_lines(part_desc: str):
     lines = [p.strip() for p in raw.split("\n") if p.strip()]
     if len(lines) >= 2:
         return lines[:2]
-
     flat = normalize_space(raw)
     if re.search(r"part\s*1\s*:", flat, flags=re.IGNORECASE) and re.search(r"part\s*2\s*:", flat, flags=re.IGNORECASE):
         split = re.split(r"(?=part\s*2\s*:)", flat, maxsplit=1, flags=re.IGNORECASE)
         if len(split) == 2:
             return [split[0].strip(), split[1].strip()]
-
     candidates = build_two_line_candidates(raw)
     if candidates:
-        best = candidates[0]
-        return [best[0], best[1]]
-
+        return [candidates[0][0], candidates[0][1]]
     return [flat]
 
 
@@ -872,33 +815,31 @@ def should_use_stacked_part_layout(part_desc: str):
 
 
 def get_part_stack_layout(left_x, border_offset, row3_y):
-    label_x = left_x
-    label_y = row3_y
-    label_h = PART_STACK_LABEL_H
-
+    label_x       = left_x
+    label_y       = row3_y
+    label_h       = PART_STACK_LABEL_H
     value_x       = left_x + PART_STACK_INDENT
     value_y       = row3_y + label_h + PART_STACK_GAP
     value_w       = LABEL_W - border_offset - RIGHT_MARGIN - value_x
     value_h_total = LABEL_H - PART_STACK_BOTTOM_MARGIN - value_y
     line_gap      = PART_STACK_GAP
     per_line_h    = max(MIN_TEXT_HEIGHT_MM, (value_h_total - line_gap) / 2.0)
-
     return {
-        "label_x":      label_x,
-        "label_y":      label_y,
-        "label_w":      LABEL_W - label_x - RIGHT_MARGIN,
-        "label_h":      label_h,
-        "value_x":      value_x,
-        "value_y":      value_y,
-        "value_w":      value_w,
+        "label_x":       label_x,
+        "label_y":       label_y,
+        "label_w":       LABEL_W - label_x - RIGHT_MARGIN,
+        "label_h":       label_h,
+        "value_x":       value_x,
+        "value_y":       value_y,
+        "value_w":       value_w,
         "value_h_total": value_h_total,
-        "line_gap":     line_gap,
-        "per_line_h":   per_line_h,
+        "line_gap":      line_gap,
+        "per_line_h":    per_line_h,
     }
 
 
 # ============================================================
-# SVG generation (uses shared layout)
+# SVG generation
 # ============================================================
 
 def generate_svg(
@@ -907,10 +848,12 @@ def generate_svg(
     left_x, left_w, right_x,
     row1_y, row2_y, row3_y,
     fs1, fs2, fs3,
-    show_guides=False, show_border=True,
+    show_guides=False,
+    show_border=True,
+    show_holes=True,
 ):
-    colors  = get_mode_colors(mode)
-    layout  = compute_label_layout(
+    colors           = get_mode_colors(mode)
+    layout           = compute_label_layout(
         owner, tool_number, part_desc,
         left_x, left_w, right_x,
         row1_y, row2_y, row3_y,
@@ -922,9 +865,9 @@ def generate_svg(
 
     all_svg_paths = []
     meta = {
-        "left_sizes": [], "right_sizes": [],
-        "left_texts": [], "right_texts": [],
-        "right_w":    right_w,
+        "left_sizes":   [], "right_sizes":  [],
+        "left_texts":   [], "right_texts":  [],
+        "right_w":      right_w,
         "stacked_part": use_stacked_part,
     }
 
@@ -969,11 +912,7 @@ def generate_svg(
         meta["left_texts"].append("Part description:")
         meta["right_texts"].append(" / ".join(row2_blocks["right_block"]["texts"]))
 
-    hole_r       = hole_dia / 2.0
-    hole_y       = LABEL_H / 2.0
-    hole_left_x  = hole_offset
-    hole_right_x = LABEL_W - hole_offset
-
+    # ---- border ----
     border_svg = f"""
     <rect x="{border_offset}" y="{border_offset}"
           width="{LABEL_W - 2 * border_offset}"
@@ -984,6 +923,32 @@ def generate_svg(
           stroke-width="0.20"/>
     """
 
+    # ---- holes ----
+    hole_r       = hole_dia / 2.0
+    hole_y_pos   = LABEL_H / 2.0
+    hole_left_x  = hole_offset
+    hole_right_x = LABEL_W - hole_offset
+
+    if show_holes:
+        # Full solid circles — will be engraved / cut
+        holes_svg = f"""
+        <circle cx="{hole_left_x}"  cy="{hole_y_pos}" r="{hole_r}"
+                fill="{colors['hole_fill']}" stroke="{colors['plate_stroke']}" stroke-width="0.15"/>
+        <circle cx="{hole_right_x}" cy="{hole_y_pos}" r="{hole_r}"
+                fill="{colors['hole_fill']}" stroke="{colors['plate_stroke']}" stroke-width="0.15"/>
+        """
+    else:
+        # Dashed guide rings — preview only, not engraved
+        holes_svg = f"""
+        <circle cx="{hole_left_x}"  cy="{hole_y_pos}" r="{hole_r}"
+                fill="none" stroke="{colors['guide_stroke']}"
+                stroke-width="0.12" stroke-dasharray="0.6,0.6" opacity="0.55"/>
+        <circle cx="{hole_right_x}" cy="{hole_y_pos}" r="{hole_r}"
+                fill="none" stroke="{colors['guide_stroke']}"
+                stroke-width="0.12" stroke-dasharray="0.6,0.6" opacity="0.55"/>
+        """
+
+    # ---- guides ----
     guides_svg = ""
     if show_guides:
         if use_stacked_part:
@@ -1017,10 +982,7 @@ def generate_svg(
         height="{LABEL_H}mm"
         viewBox="0 0 {LABEL_W} {LABEL_H}">
         {border_svg}
-        <circle cx="{hole_left_x}"  cy="{hole_y}" r="{hole_r}"
-                fill="{colors['hole_fill']}" stroke="{colors['plate_stroke']}" stroke-width="0.15"/>
-        <circle cx="{hole_right_x}" cy="{hole_y}" r="{hole_r}"
-                fill="{colors['hole_fill']}" stroke="{colors['plate_stroke']}" stroke-width="0.15"/>
+        {holes_svg}
         {guides_svg}
         <g fill="{colors['text_fill']}" fill-rule="evenodd" stroke="none">
             {text_svg}
@@ -1031,7 +993,7 @@ def generate_svg(
 
 
 # ============================================================
-# DXF generation (uses shared layout)
+# DXF generation
 # ============================================================
 
 def generate_dxf(
@@ -1041,6 +1003,7 @@ def generate_dxf(
     row1_y, row2_y, row3_y,
     fs1, fs2, fs3,
     show_border=True,
+    show_holes=True,
 ):
     layout      = compute_label_layout(
         owner, tool_number, part_desc,
@@ -1063,10 +1026,10 @@ def generate_dxf(
         hatch = msp.add_hatch(dxfattribs={"layer": "FILL", "color": 7})
         hatch.paths.add_polyline_path(
             [
-                (border_offset,              border_offset),
-                (LABEL_W - border_offset,    border_offset),
-                (LABEL_W - border_offset,    LABEL_H - border_offset),
-                (border_offset,              LABEL_H - border_offset),
+                (border_offset,           border_offset),
+                (LABEL_W - border_offset, border_offset),
+                (LABEL_W - border_offset, LABEL_H - border_offset),
+                (border_offset,           LABEL_H - border_offset),
             ],
             is_closed=True,
         )
@@ -1079,12 +1042,16 @@ def generate_dxf(
             corner_r, "BORDER",
         )
 
-    hole_r       = hole_dia / 2.0
-    hole_y       = LABEL_H / 2.0
-    hole_left_x  = hole_offset
-    hole_right_x = LABEL_W - hole_offset
-    msp.add_circle((hole_left_x,  hole_y), hole_r, dxfattribs={"layer": "HOLES"})
-    msp.add_circle((hole_right_x, hole_y), hole_r, dxfattribs={"layer": "HOLES"})
+    # Holes: only add DXF entities when show_holes=True.
+    # The HOLES layer always exists so CAD software doesn't complain,
+    # but it will be empty when holes are excluded.
+    if show_holes:
+        hole_r       = hole_dia / 2.0
+        hole_y_pos   = LABEL_H / 2.0
+        hole_left_x  = hole_offset
+        hole_right_x = LABEL_W - hole_offset
+        msp.add_circle((hole_left_x,  hole_y_pos), hole_r, dxfattribs={"layer": "HOLES"})
+        msp.add_circle((hole_right_x, hole_y_pos), hole_r, dxfattribs={"layer": "HOLES"})
 
     def emit_block_dxf(block):
         for i, final_text in enumerate(block["texts"]):
@@ -1134,6 +1101,7 @@ def build_batch_zip(
     row1_y: float, row2_y: float, row3_y: float,
     fs1: float, fs2: float, fs3: float,
     show_border: bool,
+    show_holes: bool,
     include_svg: bool = True,
     include_dxf: bool = True,
     progress_bar=None,
@@ -1152,10 +1120,9 @@ def build_batch_zip(
 
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         for idx, (_, row) in enumerate(df.iterrows()):
-            owner       = "" if pd.isna(row["property_of"])    else str(row["property_of"])
-            tool_number = "" if pd.isna(row["tool_number"])     else str(row["tool_number"])
+            owner       = "" if pd.isna(row["property_of"])     else str(row["property_of"])
+            tool_number = "" if pd.isna(row["tool_number"])      else str(row["tool_number"])
             part_desc   = "" if pd.isna(row["part_description"]) else str(row["part_description"])
-
             mode        = parse_mode(row.get("mode", None), default_mode)
             hole_dia    = parse_optional_float(row.get("hole_dia", row.get("hole_size", None)), default_hole_dia)
             hole_offset = parse_optional_float(row.get("hole_offset", None), default_hole_offset)
@@ -1168,6 +1135,7 @@ def build_batch_zip(
                 left_x=left_x, left_w=left_w, right_x=right_x,
                 row1_y=row1_y, row2_y=row2_y, row3_y=row3_y,
                 fs1=fs1, fs2=fs2, fs3=fs3,
+                show_holes=show_holes,
             )
 
             if include_svg:
@@ -1179,13 +1147,14 @@ def build_batch_zip(
                 zf.writestr(f"{base_name}.dxf", dxf_bytes)
 
             preview_records.append({
-                "file_base":       base_name,
-                "property_of":     owner,
-                "tool_number":     tool_number,
+                "file_base":        base_name,
+                "property_of":      owner,
+                "tool_number":      tool_number,
                 "part_description": part_desc,
-                "mode":            mode,
-                "hole_dia":        hole_dia,
-                "hole_offset":     hole_offset,
+                "mode":             mode,
+                "hole_dia":         hole_dia,
+                "hole_offset":      hole_offset,
+                "holes_exported":   show_holes,
             })
 
             if progress_bar is not None:
@@ -1206,9 +1175,9 @@ def _score_custom_header_block(raw_df: pd.DataFrame, start_row: int) -> int:
         parts.extend(row_vals)
     text  = slugify_text(" ".join(parts))
     score = 0
-    if "izdelek"  in text: score += 3
-    if "orodje"   in text and "sifra" in text: score += 4
-    if "lastnik"  in text: score += 3
+    if "izdelek" in text: score += 3
+    if "orodje"  in text and "sifra" in text: score += 4
+    if "lastnik" in text: score += 3
     if "seznam_orodij" in text: score -= 2
     return score
 
@@ -1216,11 +1185,9 @@ def _score_custom_header_block(raw_df: pd.DataFrame, start_row: int) -> int:
 def find_custom_excel_sheet_and_header(uploaded_file):
     uploaded_file.seek(0)
     xls = pd.ExcelFile(uploaded_file)
-
     best_sheet = None
     best_row   = None
     best_score = -(10**9)
-
     for sheet in xls.sheet_names:
         raw_df = pd.read_excel(xls, sheet_name=sheet, header=None)
         if raw_df.empty:
@@ -1232,10 +1199,11 @@ def find_custom_excel_sheet_and_header(uploaded_file):
                 best_score = score
                 best_sheet = sheet
                 best_row   = start_row
-
     if best_sheet is None or best_row is None or best_score < 6:
-        raise ValueError("Could not detect the custom Excel header row. "
-                         "Please ensure the file has columns: lastnik / orodje / sifra_orodja / izdelek.")
+        raise ValueError(
+            "Could not detect the custom Excel header row. "
+            "Ensure the file has columns: lastnik / orodje / sifra_orodja / izdelek."
+        )
     return best_sheet, best_row
 
 
@@ -1268,31 +1236,29 @@ def normalize_custom_template_df(data_df: pd.DataFrame) -> pd.DataFrame:
         for col in parsed_df.columns:
             df[col] = parsed_df[col]
     else:
-        df["parsed_property_of"]    = ""
-        df["parsed_tool_number"]    = ""
+        df["parsed_property_of"]     = ""
+        df["parsed_tool_number"]     = ""
         df["parsed_part_description"] = ""
 
     tool_source = pick_first_existing_column(df.columns, ["orodje", "sifra_orodja", "orodje_sifra", "tool_number"])
     part_source = pick_first_existing_column(df.columns, ["izdelek", "part_description", "izdelek_2"])
     prop_source = pick_first_existing_column(df.columns, ["lastnik", "lastnik_orodja", "property_of"])
 
-    fallback_property = df[prop_source].fillna("").astype(str).str.strip()  if prop_source else pd.Series([""] * len(df), index=df.index)
-    fallback_tool     = df[tool_source].fillna("").astype(str).str.strip()  if tool_source else pd.Series([""] * len(df), index=df.index)
-    fallback_part     = df[part_source].fillna("").astype(str).str.strip()  if part_source else pd.Series([""] * len(df), index=df.index)
+    fallback_property = df[prop_source].fillna("").astype(str).str.strip() if prop_source else pd.Series([""] * len(df), index=df.index)
+    fallback_tool     = df[tool_source].fillna("").astype(str).str.strip() if tool_source else pd.Series([""] * len(df), index=df.index)
+    fallback_part     = df[part_source].fillna("").astype(str).str.strip() if part_source else pd.Series([""] * len(df), index=df.index)
 
     df["property_of"]    = df["parsed_property_of"].fillna("").astype(str).str.strip()
     df["property_of"]    = df["property_of"].mask(df["property_of"] == "", fallback_property)
-
     df["tool_number"]    = df["parsed_tool_number"].fillna("").astype(str).str.strip()
     df["tool_number"]    = df["tool_number"].mask(df["tool_number"] == "", fallback_tool)
-
     df["part_description"] = df["parsed_part_description"].fillna("").astype(str).str.strip()
     df["part_description"] = df["part_description"].mask(df["part_description"] == "", fallback_part)
 
     df = df[
         ~(
-            (df["tool_number"]    == "")
-            & (df["property_of"]  == "")
+            (df["tool_number"]      == "")
+            & (df["property_of"]    == "")
             & (df["part_description"] == "")
         )
     ].copy()
@@ -1300,29 +1266,23 @@ def normalize_custom_template_df(data_df: pd.DataFrame) -> pd.DataFrame:
     df["mode"]        = DEFAULT_MODE
     df["hole_dia"]    = DEFAULT_HOLE_DIA
     df["hole_offset"] = DEFAULT_HOLE_OFFSET
-
     return df
 
 
 def load_custom_tool_excel(uploaded_file) -> pd.DataFrame:
     uploaded_file.seek(0)
     sheet_name, header_row = find_custom_excel_sheet_and_header(uploaded_file)
-
     uploaded_file.seek(0)
     raw_df = pd.read_excel(uploaded_file, sheet_name=sheet_name, header=None)
-
     headers    = combine_multirow_headers(raw_df, header_row, depth=3)
     data_start = header_row + 3
-
-    data_df = raw_df.iloc[data_start:].copy()
+    data_df    = raw_df.iloc[data_start:].copy()
     data_df.columns = headers
-    data_df = data_df.dropna(how="all").reset_index(drop=True)
+    data_df    = data_df.dropna(how="all").reset_index(drop=True)
     data_df.insert(0, "excel_row", range(data_start + 1, data_start + 1 + len(data_df)))
-
-    data_df = normalize_custom_template_df(data_df)
-    data_df = data_df.iloc[::-1].reset_index(drop=True)
+    data_df    = normalize_custom_template_df(data_df)
+    data_df    = data_df.iloc[::-1].reset_index(drop=True)
     data_df.insert(0, "priority", range(1, len(data_df) + 1))
-
     return data_df
 
 
@@ -1341,24 +1301,47 @@ with st.sidebar:
         index=1 if DEFAULT_MODE == "Anodized aluminium (negative)" else 0,
         help="Anodized aluminium (negative) = white text on black plate. Normal = black text on white plate.",
     )
-    show_border = st.checkbox("Show label border", value=True)
-    show_guides = st.checkbox("Show layout guides (single preview)", value=False)
+
+    st.divider()
+    st.markdown("**Export options**")
+
+    show_border = st.checkbox(
+        "Include border",
+        value=True,
+        help="Outer rounded rectangle. Uncheck to export text + holes only.",
+    )
+
+    show_holes = st.checkbox(
+        "Include mounting holes",
+        value=True,
+        help=(
+            "When checked: hole circles are written into SVG and DXF exports and will be engraved/cut.\n\n"
+            "When unchecked: holes are OMITTED from all export files. "
+            "The preview shows faint dashed rings so you can still see their positions."
+        ),
+    )
+
+    if not show_holes:
+        st.caption("⚠️ Holes omitted from exports — dashed guide shown in preview only")
+
+    show_guides = st.checkbox(
+        "Show layout guides (preview only)",
+        value=False,
+        help="Draws dashed bounding boxes for each text region. Never written to export files.",
+    )
 
     with st.expander("🔡 Text sizes"):
-        fs1 = st.slider("Row 1 text height (mm)", 1.2, 4.0, DEFAULT_FS1, 0.1,
-                        help="'Property of' row")
-        fs2 = st.slider("Row 2 text height (mm)", 1.2, 4.0, DEFAULT_FS2, 0.1,
-                        help="'Tool number' row")
-        fs3 = st.slider("Row 3 text height (mm)", 1.0, 3.0, DEFAULT_FS3, 0.1,
-                        help="'Part description' row")
+        fs1 = st.slider("Row 1 text height (mm)", 1.2, 4.0, DEFAULT_FS1, 0.1, help="'Property of' row")
+        fs2 = st.slider("Row 2 text height (mm)", 1.2, 4.0, DEFAULT_FS2, 0.1, help="'Tool number' row")
+        fs3 = st.slider("Row 3 text height (mm)", 1.0, 3.0, DEFAULT_FS3, 0.1, help="'Part description' row")
 
-    with st.expander("⭕ Holes"):
-        hole_dia_default    = st.slider("Hole diameter (mm)",        2.0, 5.0, DEFAULT_HOLE_DIA,    0.1)
-        hole_offset_default = st.slider("Hole centre from edge (mm)", 3.0, 8.0, DEFAULT_HOLE_OFFSET, 0.1)
+    with st.expander("⭕ Hole dimensions"):
+        hole_dia_default    = st.slider("Hole diameter (mm)",          2.0, 5.0, DEFAULT_HOLE_DIA,    0.1)
+        hole_offset_default = st.slider("Hole centre from edge (mm)",  3.0, 8.0, DEFAULT_HOLE_OFFSET, 0.1)
 
     with st.expander("🔲 Shape"):
-        corner_r      = st.slider("Corner radius (mm)",   0.0, 5.0, DEFAULT_CORNER_R,     0.1)
-        border_offset = st.slider("Border inset (mm)",    0.0, 1.0, DEFAULT_BORDER_OFFSET, 0.05)
+        corner_r      = st.slider("Corner radius (mm)",  0.0, 5.0, DEFAULT_CORNER_R,      0.1)
+        border_offset = st.slider("Border inset (mm)",   0.0, 1.0, DEFAULT_BORDER_OFFSET,  0.05)
 
     with st.expander("📐 Advanced column layout"):
         st.caption("Only change these if your physical label template differs.")
@@ -1397,24 +1380,40 @@ with tab_single:
             value=DEFAULT_PART,
             key="single_part",
             height=100,
-            help=f"Stacked two-line layout kicks in automatically when text exceeds {PART_STACK_TRIGGER_LEN} characters, or contains a newline.",
+            help=f"Stacked two-line layout activates automatically at {PART_STACK_TRIGGER_LEN} chars or on newline.",
         )
         char_count  = len(part_desc)
         pct         = min(char_count / PART_STACK_TRIGGER_LEN, 1.0)
-        trigger_msg = "⚡ Stacked layout active" if char_count >= PART_STACK_TRIGGER_LEN else f"{PART_STACK_TRIGGER_LEN - char_count} chars until stacked layout"
+        trigger_msg = (
+            "⚡ Stacked layout active"
+            if char_count >= PART_STACK_TRIGGER_LEN
+            else f"{PART_STACK_TRIGGER_LEN - char_count} chars until stacked layout"
+        )
         st.caption(f"{char_count} chars — {trigger_msg}")
         st.progress(pct)
 
         st.divider()
-        mode_single         = st.selectbox("Engraving mode", ALLOWED_MODES,
-                                           index=ALLOWED_MODES.index(mode_default), key="single_mode")
-        hole_dia_single     = st.number_input("Hole diameter (mm)",        min_value=2.0, max_value=5.0,
-                                               value=float(hole_dia_default),    step=0.1)
-        hole_offset_single  = st.number_input("Hole centre from edge (mm)", min_value=3.0, max_value=8.0,
-                                               value=float(hole_offset_default), step=0.1)
+        mode_single        = st.selectbox(
+            "Engraving mode", ALLOWED_MODES,
+            index=ALLOWED_MODES.index(mode_default), key="single_mode",
+        )
+        hole_dia_single    = st.number_input(
+            "Hole diameter (mm)",         min_value=2.0, max_value=5.0,
+            value=float(hole_dia_default), step=0.1,
+        )
+        hole_offset_single = st.number_input(
+            "Hole centre from edge (mm)",  min_value=3.0, max_value=8.0,
+            value=float(hole_offset_default), step=0.1,
+        )
 
     with right_col:
         st.subheader("Live preview")
+
+        # Holes status badge
+        if show_holes:
+            st.caption("⭕ Holes: **included** in export")
+        else:
+            st.caption("🚫 Holes: **excluded** from export — dashed guide shown only")
 
         svg_output, meta = generate_svg(
             owner=owner, tool_number=tool_number, part_desc=part_desc,
@@ -1424,7 +1423,9 @@ with tab_single:
             left_x=left_x, left_w=left_w, right_x=right_x,
             row1_y=row1_y, row2_y=row2_y, row3_y=row3_y,
             fs1=fs1, fs2=fs2, fs3=fs3,
-            show_guides=show_guides, show_border=show_border,
+            show_guides=show_guides,
+            show_border=show_border,
+            show_holes=show_holes,
         )
 
         render_svg_preview_card(svg_output, mode_single, preview_scale)
@@ -1435,7 +1436,7 @@ with tab_single:
             f"Scale: {preview_scale:.1f} px/mm"
         )
 
-        dxf_bytes  = generate_dxf(
+        dxf_bytes = generate_dxf(
             owner=owner, tool_number=tool_number, part_desc=part_desc,
             mode=mode_single,
             hole_dia=hole_dia_single, hole_offset=hole_offset_single,
@@ -1444,8 +1445,9 @@ with tab_single:
             row1_y=row1_y, row2_y=row2_y, row3_y=row3_y,
             fs1=fs1, fs2=fs2, fs3=fs3,
             show_border=show_border,
+            show_holes=show_holes,
         )
-        base_name  = safe_filename(tool_number.strip() or "laser_label")
+        base_name = safe_filename(tool_number.strip() or "laser_label")
 
         c1, c2 = st.columns(2)
         with c1:
@@ -1486,7 +1488,7 @@ with tab_batch:
 
 | Column | Description |
 |---|---|
-| `mode` | `normal` or `negative` (default: sidebar setting) |
+| `mode` | `normal` or `negative` (default: sidebar) |
 | `hole_dia` or `hole_size` | Hole diameter in mm |
 | `hole_offset` | Hole centre distance from edge in mm |
 """)
@@ -1495,7 +1497,6 @@ with tab_batch:
         "Upload CSV or Excel file",
         type=["csv", "xlsx", "xls"],
         key="batch_upload",
-        help="Drag and drop or click to browse. Accepts .csv, .xlsx, .xls",
     )
 
     if uploaded is not None:
@@ -1509,15 +1510,13 @@ with tab_batch:
             if missing_cols:
                 st.error(
                     f"**Missing required columns:** {', '.join(missing_cols)}\n\n"
-                    f"Columns found in your file: `{'`, `'.join(df.columns.tolist())}`"
+                    f"Columns found: `{'`, `'.join(df.columns.tolist())}`"
                 )
                 st.stop()
 
-            # Show detected columns banner
             found_optional = [c for c in ["mode", "hole_dia", "hole_size", "hole_offset"] if c in df.columns]
             st.success(
-                f"✅ Loaded **{len(df)} rows** from `{uploaded.name}` — "
-                f"required columns detected ✓"
+                f"✅ Loaded **{len(df)} rows** from `{uploaded.name}` — required columns detected ✓"
                 + (f" | Optional: `{'`, `'.join(found_optional)}`" if found_optional else "")
             )
 
@@ -1526,22 +1525,22 @@ with tab_batch:
                 preview_df["mode"] = mode_default
             else:
                 preview_df["mode"] = preview_df["mode"].apply(lambda x: parse_mode(x, mode_default))
-
             if "hole_dia" not in preview_df.columns:
                 preview_df["hole_dia"] = preview_df["hole_size"] if "hole_size" in preview_df.columns else hole_dia_default
             if "hole_offset" not in preview_df.columns:
                 preview_df["hole_offset"] = hole_offset_default
-
             preview_df["hole_dia"]    = preview_df["hole_dia"].apply(lambda x: parse_optional_float(x, hole_dia_default))
             preview_df["hole_offset"] = preview_df["hole_offset"].apply(lambda x: parse_optional_float(x, hole_offset_default))
 
-            # --- Row preview picker (above the table) ---
             st.markdown("### 🔍 Browse rows")
-            row_labels    = [f"{i + 1}. {str(preview_df.iloc[i]['tool_number'])}" for i in range(len(preview_df))]
+            row_labels     = [f"{i + 1}. {str(preview_df.iloc[i]['tool_number'])}" for i in range(len(preview_df))]
             selected_label = st.selectbox("Preview a row before generating", row_labels)
             selected_idx   = row_labels.index(selected_label)
             selected_row   = preview_df.iloc[selected_idx]
             selected_mode  = parse_mode(selected_row.get("mode", mode_default), mode_default)
+
+            if not show_holes:
+                st.caption("🚫 Holes excluded from export — dashed guides shown in preview only")
 
             preview_svg_raw, _ = generate_svg(
                 owner=str(selected_row["property_of"]),
@@ -1555,27 +1554,30 @@ with tab_batch:
                 row1_y=row1_y, row2_y=row2_y, row3_y=row3_y,
                 fs1=fs1, fs2=fs2, fs3=fs3,
                 show_guides=False, show_border=show_border,
+                show_holes=show_holes,
             )
             render_svg_preview_card(preview_svg_raw, selected_mode, preview_scale)
 
             st.divider()
 
-            # --- Full table ---
             with st.expander("📄 All rows", expanded=False):
                 st.dataframe(
                     preview_df[["property_of", "tool_number", "part_description", "mode", "hole_dia", "hole_offset"]],
                     use_container_width=True, hide_index=True,
                 )
 
-            # --- Generate on button click ---
             st.markdown("### 📦 Export all rows")
             include_svg_batch = st.checkbox("Include SVG files", value=True, key="batch_svg")
             include_dxf_batch = st.checkbox("Include DXF files", value=True, key="batch_dxf")
 
+            if show_holes:
+                st.info("⭕ Mounting holes will be **included** in exported files (set in sidebar).")
+            else:
+                st.warning("🚫 Mounting holes will be **excluded** from exported files (set in sidebar).")
+
             if st.button("🚀 Generate ZIP", type="primary", use_container_width=True, key="batch_generate"):
                 progress = st.progress(0, text="Starting…")
                 status   = st.empty()
-
                 try:
                     zip_bytes, batch_result_df = build_batch_zip(
                         df=preview_df,
@@ -1587,24 +1589,22 @@ with tab_batch:
                         row1_y=row1_y, row2_y=row2_y, row3_y=row3_y,
                         fs1=fs1, fs2=fs2, fs3=fs3,
                         show_border=show_border,
+                        show_holes=show_holes,
                         include_svg=include_svg_batch,
                         include_dxf=include_dxf_batch,
                         progress_bar=progress,
                     )
                     progress.empty()
                     status.success(f"✅ Done — {len(batch_result_df)} labels generated.")
-
                     st.download_button(
-                        f"⬇️ Download ZIP  ({len(batch_result_df)} labels, SVG + DXF)",
+                        f"⬇️ Download ZIP  ({len(batch_result_df)} labels)",
                         data=zip_bytes,
                         file_name="laser_labels_batch.zip",
                         mime="application/zip",
                         use_container_width=True,
                     )
-
                     with st.expander("Generated file list"):
                         st.dataframe(batch_result_df, use_container_width=True, hide_index=True)
-
                 except Exception as e:
                     progress.empty()
                     st.error(f"Generation failed: {e}")
@@ -1650,10 +1650,9 @@ with tab_custom:
 
             st.success(
                 f"✅ Loaded **{len(custom_df)} tools** from `{custom_uploaded.name}` — "
-                f"sorted by priority (1 = most recent / highest)."
+                f"sorted by priority (1 = highest)."
             )
 
-            # ---- Browse ALL rows BEFORE selecting for export ----
             st.markdown("### 🔍 Browse all tools")
             browse_labels = [
                 f"P{int(r['priority'])} | {r['tool_number']} | row {int(r['excel_row'])}"
@@ -1662,6 +1661,9 @@ with tab_custom:
             browse_choice = st.selectbox("Select a tool to preview", browse_labels, key="custom_browse_choice")
             browse_idx    = browse_labels.index(browse_choice)
             browse_row    = custom_df.iloc[browse_idx]
+
+            if not show_holes:
+                st.caption("🚫 Holes excluded from export — dashed guides shown in preview only")
 
             browse_svg, _ = generate_svg(
                 owner=str(browse_row["property_of"]),
@@ -1674,10 +1676,10 @@ with tab_custom:
                 row1_y=row1_y, row2_y=row2_y, row3_y=row3_y,
                 fs1=fs1, fs2=fs2, fs3=fs3,
                 show_guides=False, show_border=show_border,
+                show_holes=show_holes,
             )
             render_svg_preview_card(browse_svg, mode_default, preview_scale)
 
-            # Single-tool download for browsed row
             browse_dxf = generate_dxf(
                 owner=str(browse_row["property_of"]),
                 tool_number=str(browse_row["tool_number"]),
@@ -1687,7 +1689,9 @@ with tab_custom:
                 corner_r=corner_r, border_offset=border_offset,
                 left_x=left_x, left_w=left_w, right_x=right_x,
                 row1_y=row1_y, row2_y=row2_y, row3_y=row3_y,
-                fs1=fs1, fs2=fs2, fs3=fs3, show_border=show_border,
+                fs1=fs1, fs2=fs2, fs3=fs3,
+                show_border=show_border,
+                show_holes=show_holes,
             )
             browse_base = safe_filename(str(browse_row["tool_number"]) or "laser_label")
             b1, b2 = st.columns(2)
@@ -1710,7 +1714,6 @@ with tab_custom:
 
             st.divider()
 
-            # ---- Parsing debug ----
             with st.expander("🐛 Parsing debug — inspect what was extracted per row"):
                 debug_cols = ["priority", "excel_row", "tool_number", "property_of", "part_description"]
                 if "napis_na" in custom_df.columns:
@@ -1718,13 +1721,10 @@ with tab_custom:
                 available_debug = [c for c in debug_cols if c in custom_df.columns]
                 st.dataframe(custom_df[available_debug], use_container_width=True, hide_index=True)
                 st.caption(
-                    "If a field is blank in 'tool_number' / 'property_of' / 'part_description' "
-                    "but the raw 'napis_na' has data, the parser couldn't find the expected keywords. "
-                    "Check that the text follows the format: "
-                    "`Property of: X  Tool number: Y  Part 1: Z`"
+                    "If a field is blank, the parser couldn't find the expected keywords. "
+                    "Check that napis_na follows: `Property of: X  Tool number: Y  Part 1: Z`"
                 )
 
-            # ---- Selection table ----
             st.markdown("### ✅ Select rows for batch export")
             st.caption("Tick the rows you want to include in the ZIP download.")
 
@@ -1744,16 +1744,14 @@ with tab_custom:
 
             info_c1, info_c2 = st.columns([1, 1])
             with info_c1:
-                st.info(f"Total rows: **{len(edited_custom_df)}** | Selected for export: **{len(selected_rows)}**")
+                st.info(f"Total rows: **{len(edited_custom_df)}** | Selected: **{len(selected_rows)}**")
             with info_c2:
                 if not edited_custom_df.empty:
-                    top_tool = str(edited_custom_df.iloc[0]["tool_number"])
-                    st.caption(f"Highest-priority row (top of list): {top_tool}")
+                    st.caption(f"Top priority: {str(edited_custom_df.iloc[0]['tool_number'])}")
 
-            # ---- Export selected ----
             st.markdown("### 📦 Export selected rows")
             if selected_rows.empty:
-                st.warning("No rows selected yet. Use the checkboxes above to mark rows for export.")
+                st.warning("No rows selected. Use the checkboxes above to mark rows for export.")
             else:
                 with st.expander(f"Rows queued ({len(selected_rows)})", expanded=False):
                     st.dataframe(
@@ -1761,16 +1759,18 @@ with tab_custom:
                         use_container_width=True, hide_index=True,
                     )
 
+                if show_holes:
+                    st.info("⭕ Mounting holes will be **included** in exported files (set in sidebar).")
+                else:
+                    st.warning("🚫 Mounting holes will be **excluded** from exported files (set in sidebar).")
+
                 if st.button(
-                    f"🚀 Generate ZIP for selected {len(selected_rows)} rows",
-                    type="primary",
-                    use_container_width=True,
-                    key="custom_generate",
+                    f"🚀 Generate ZIP for {len(selected_rows)} selected rows",
+                    type="primary", use_container_width=True, key="custom_generate",
                 ):
                     export_df = selected_rows.drop(columns=["print"]).copy()
                     progress  = st.progress(0, text="Starting…")
                     status    = st.empty()
-
                     try:
                         zip_bytes, export_manifest_df = build_batch_zip(
                             df=export_df,
@@ -1782,22 +1782,20 @@ with tab_custom:
                             row1_y=row1_y, row2_y=row2_y, row3_y=row3_y,
                             fs1=fs1, fs2=fs2, fs3=fs3,
                             show_border=show_border,
+                            show_holes=show_holes,
                             progress_bar=progress,
                         )
                         progress.empty()
                         status.success(f"✅ Done — {len(export_manifest_df)} labels generated.")
-
                         st.download_button(
-                            f"⬇️ Download ZIP  ({len(export_manifest_df)} labels, SVG + DXF)",
+                            f"⬇️ Download ZIP  ({len(export_manifest_df)} labels)",
                             data=zip_bytes,
                             file_name="laser_labels_selected.zip",
                             mime="application/zip",
                             use_container_width=True,
                         )
-
                         with st.expander("Exported file list"):
                             st.dataframe(export_manifest_df, use_container_width=True, hide_index=True)
-
                     except Exception as e:
                         progress.empty()
                         st.error(f"Generation failed: {e}")
@@ -1833,24 +1831,20 @@ izdelek / izdelek_2         → part_description
         language="text",
     )
 
-with st.expander("📖 Layout notes"):
+with st.expander("📖 Layout & export notes"):
     st.write("""
-**Property of** wraps automatically to 2 lines for long company names (e.g. "DAFRA kontakt
-tehnologija d.o.o."). The first line stays vertically aligned with the label; the second line
-appears directly below it.
+**Property of** wraps to 2 lines automatically for long company names.
 
 **Tool number** is always single-line.
 
-**Part description** switches to stacked layout automatically when:
-- Text is longer than 52 characters, OR
-- The text contains a newline, OR
-- The text contains "Part 2:"
+**Part description** switches to stacked layout when text exceeds 52 characters,
+contains a newline, or contains "Part 2:".
 
-Stacked layout:
+**Mounting holes** are controlled by "Include mounting holes" in the sidebar:
+- ✅ Checked → solid hole circles written into SVG and DXF, will be engraved/cut
+- ☐ Unchecked → hole entities completely omitted from all export files;
+  preview shows faint dashed rings so you can still verify their positions
 
-    Part description:
-        Part 1: Charging Plate P23 left (id. 33202)
-        Part 2: Charging Plate P23 right (id. 33203)
-
-This prevents overflow for long descriptions and is DXF-safe.
+The **HOLES layer** in DXF always exists (empty when excluded) so no CAD
+software will complain about a missing layer reference.
 """)
