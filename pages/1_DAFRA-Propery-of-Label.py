@@ -28,8 +28,8 @@ st.set_page_config(
 # ------------------------------------------------------------
 # Main geometry
 # ------------------------------------------------------------
-LABEL_W = 78.5   # mm
-LABEL_H = 21.0   # mm
+LABEL_W = 78.5
+LABEL_H = 21.0
 
 DEFAULT_OWNER = "Stihl Group"
 DEFAULT_TOOL = "89193"
@@ -49,8 +49,8 @@ DEFAULT_ROW1_Y = 3.0
 DEFAULT_ROW2_Y = 8.0
 DEFAULT_ROW3_Y = 13.2
 
-ROW1_H = 4.0
-ROW2_H = 4.0
+ROW1_H = 4.2
+ROW2_H = 4.2
 ROW3_H = 3.8
 
 DEFAULT_FS1 = 2.8
@@ -61,8 +61,11 @@ MIN_TEXT_HEIGHT_MM = 1.2
 RIGHT_MARGIN = 2.2
 VECTOR_FONT_FAMILY = "DejaVu Sans Condensed"
 
-AUTO_WRAP_MAX_LINES = 2
-PART_VALUE_BOTTOM_MARGIN = 1.0
+PART_STACK_TRIGGER_LEN = 52
+PART_STACK_INDENT = 2.1
+PART_STACK_LABEL_H = 2.0
+PART_STACK_GAP = 0.35
+PART_STACK_BOTTOM_MARGIN = 0.7
 MULTILINE_GAP_MM = 0.35
 
 ALLOWED_MODES = ["Normal", "Anodized aluminium (negative)"]
@@ -88,6 +91,7 @@ CUSTOM_OPTIONAL_DISPLAY = [
     "parsed_tool_number",
     "parsed_part_description",
 ]
+
 
 # ------------------------------------------------------------
 # Helpers
@@ -160,7 +164,6 @@ def build_two_line_candidates(text: str):
 
     pairs = []
 
-    # Explicit newline should be respected first
     explicit_lines = [p.strip() for p in raw.split("\n") if p.strip()]
     if len(explicit_lines) >= 2:
         pairs.append((explicit_lines[0], " ".join(explicit_lines[1:])))
@@ -169,20 +172,16 @@ def build_two_line_candidates(text: str):
     if not flat:
         return []
 
-    # Important split before Part 2
     for m in re.finditer(r"\s+(?=(?:part\s*2\s*:))", flat, flags=re.IGNORECASE):
         pairs.append((flat[:m.start()].strip(), flat[m.start():].strip()))
 
-    # Split before numeric second block
     for m in re.finditer(r"\s+(?=(?:2[\.\)]|2[-–]))", flat):
         pairs.append((flat[:m.start()].strip(), flat[m.start():].strip()))
 
-    # Common separators
     for pattern in [r"\s*[;|]\s*", r"\s+/\s+", r"\s+-\s+", r",\s+"]:
         for m in re.finditer(pattern, flat):
             pairs.append((flat[:m.start()].strip(), flat[m.end():].strip()))
 
-    # Balanced word split
     words = flat.split()
     if len(words) >= 2:
         best_i = 1
@@ -219,7 +218,6 @@ def parse_napis_na(text: str) -> dict:
         "parsed_part_description": "",
     }
 
-    # Property of / Lastnik / Possessor / Eigentümer
     m = re.search(
         r"(?:property\s*of|lastnik|possessor|eigentümer)\s*:\s*(.+?)(?=(?:tool\s*number|tool\s*no\.?|orodje\s*št\.?|orodje\s*st\.?|wkz\.\s*no\.?|part\s*1\s*:|part\s*description\s*:|izdelek\s*:|product\s*:|produkt\s*:|$))",
         flat,
@@ -228,7 +226,6 @@ def parse_napis_na(text: str) -> dict:
     if m:
         result["parsed_property_of"] = clean_parsed_value(m.group(1))
 
-    # Tool number / Tool no / Orodje št
     m = re.search(
         r"(?:tool\s*number|tool\s*no\.?|orodje\s*št\.?|orodje\s*st\.?|wkz\.\s*no\.?)\s*:\s*([A-Za-z0-9./_-]+)",
         flat,
@@ -237,7 +234,6 @@ def parse_napis_na(text: str) -> dict:
     if m:
         result["parsed_tool_number"] = clean_parsed_value(m.group(1))
 
-    # Prefer Part 1 / Part 2 block
     m = re.search(r"((?:part\s*1)\s*:\s*.+)$", flat, flags=re.IGNORECASE)
     if m:
         desc = m.group(1).strip()
@@ -245,7 +241,6 @@ def parse_napis_na(text: str) -> dict:
         result["parsed_part_description"] = desc.strip()
         return result
 
-    # Standard product description
     m = re.search(
         r"(?:(?:part\s*description)|(?:izdelek)|(?:product)|(?:produkt))\s*:\s*(.+)$",
         flat,
@@ -257,7 +252,6 @@ def parse_napis_na(text: str) -> dict:
         result["parsed_part_description"] = desc.strip()
         return result
 
-    # Fallback: anything after tool number if it looks like trailing description
     m = re.search(
         r"(?:tool\s*number|tool\s*no\.?|orodje\s*št\.?|orodje\s*st\.?|wkz\.\s*no\.?)\s*:\s*[A-Za-z0-9./_-]+\s+(.+)$",
         flat,
@@ -701,6 +695,7 @@ def render_svg_preview_card(svg_output: str, mode: str, preview_scale: float):
     """
     components.html(preview_html, height=preview_height + 40)
 
+
 # ------------------------------------------------------------
 # Custom Excel helpers
 # ------------------------------------------------------------
@@ -848,11 +843,80 @@ def load_custom_tool_excel(uploaded_file) -> pd.DataFrame:
 
     data_df = normalize_custom_template_df(data_df)
 
-    # lower Excel rows = higher priority
     data_df = data_df.iloc[::-1].reset_index(drop=True)
     data_df.insert(0, "priority", range(1, len(data_df) + 1))
 
     return data_df
+
+
+# ------------------------------------------------------------
+# Long part description stacked layout
+# ------------------------------------------------------------
+def split_part_description_lines(part_desc: str):
+    raw = "" if part_desc is None or pd.isna(part_desc) else str(part_desc).strip()
+    if not raw:
+        return []
+
+    raw = raw.replace("\r", "\n")
+    raw = re.sub(r"\n+", "\n", raw).strip()
+
+    lines = [p.strip() for p in raw.split("\n") if p.strip()]
+    if len(lines) >= 2:
+        return lines[:2]
+
+    flat = normalize_space(raw)
+
+    # preserve Part 1 / Part 2
+    if re.search(r"part\s*1\s*:", flat, flags=re.IGNORECASE) and re.search(r"part\s*2\s*:", flat, flags=re.IGNORECASE):
+        split = re.split(r"(?=part\s*2\s*:)", flat, maxsplit=1, flags=re.IGNORECASE)
+        if len(split) == 2:
+            return [split[0].strip(), split[1].strip()]
+
+    candidates = build_two_line_candidates(raw)
+    if candidates:
+        best = candidates[0]
+        return [best[0], best[1]]
+
+    return [flat]
+
+
+def should_use_stacked_part_layout(part_desc: str):
+    raw = "" if part_desc is None or pd.isna(part_desc) else str(part_desc)
+    flat = normalize_space(raw.replace("\n", " "))
+    if "\n" in raw:
+        return True
+    if re.search(r"part\s*2\s*:", raw, flags=re.IGNORECASE):
+        return True
+    if len(flat) >= PART_STACK_TRIGGER_LEN:
+        return True
+    return False
+
+
+def get_part_stack_layout(left_x, border_offset, row3_y):
+    label_x = left_x
+    label_y = row3_y
+    label_h = PART_STACK_LABEL_H
+
+    value_x = left_x + PART_STACK_INDENT
+    value_y = row3_y + label_h + PART_STACK_GAP
+    value_w = LABEL_W - border_offset - RIGHT_MARGIN - value_x
+    value_h_total = LABEL_H - PART_STACK_BOTTOM_MARGIN - value_y
+    line_gap = PART_STACK_GAP
+    per_line_h = max(MIN_TEXT_HEIGHT_MM, (value_h_total - line_gap) / 2.0)
+
+    return {
+        "label_x": label_x,
+        "label_y": label_y,
+        "label_w": LABEL_W - label_x - RIGHT_MARGIN,
+        "label_h": label_h,
+        "value_x": value_x,
+        "value_y": value_y,
+        "value_w": value_w,
+        "value_h_total": value_h_total,
+        "line_gap": line_gap,
+        "per_line_h": per_line_h,
+    }
+
 
 # ------------------------------------------------------------
 # SVG generation with vector outlines
@@ -879,22 +943,10 @@ def generate_svg(
     show_border=True,
 ):
     colors = get_mode_colors(mode)
+    use_stacked_part = should_use_stacked_part_layout(part_desc)
+
     rows = build_rows(owner, tool_number, part_desc)
-
     right_w = LABEL_W - right_x - RIGHT_MARGIN
-    part_value_h = max(ROW3_H, LABEL_H - row3_y - max(border_offset, PART_VALUE_BOTTOM_MARGIN))
-
-    left_boxes = [
-        {"x": left_x, "w": left_w, "row": row_box(row1_y, ROW1_H)},
-        {"x": left_x, "w": left_w, "row": row_box(row2_y, ROW2_H)},
-        {"x": left_x, "w": left_w, "row": row_box(row3_y, ROW3_H)},
-    ]
-    right_boxes = [
-        {"x": right_x, "w": right_w, "row": row_box(row1_y, ROW1_H)},
-        {"x": right_x, "w": right_w, "row": row_box(row2_y, ROW2_H)},
-        {"x": right_x, "w": right_w, "row": row_box(row3_y, part_value_h)},
-    ]
-    requested = [fs1, fs2, fs3]
 
     all_svg_paths = []
     meta = {
@@ -903,44 +955,43 @@ def generate_svg(
         "left_texts": [],
         "right_texts": [],
         "right_w": right_w,
+        "stacked_part": use_stacked_part,
     }
 
-    for i in range(3):
-        label_txt, value_txt = rows[i]
-        req_h = requested[i]
-
+    # rows 1 and 2: always single-line values
+    for i, (label_txt, value_txt, req_h, row_y, row_h) in enumerate([
+        (rows[0][0], rows[0][1], fs1, row1_y, ROW1_H),
+        (rows[1][0], rows[1][1], fs2, row2_y, ROW2_H),
+    ]):
         left_block = fit_text_block(
             text=label_txt,
             desired_h_mm=req_h,
-            box_x=left_boxes[i]["x"],
-            box_y=left_boxes[i]["row"]["y"],
-            box_w=left_boxes[i]["w"],
-            box_h=left_boxes[i]["row"]["h"],
+            box_x=left_x,
+            box_y=row_y,
+            box_w=left_w,
+            box_h=row_h,
             weight="bold",
             align="left",
             pad_x=0.0,
             max_lines=1,
         )
-
         right_block = fit_text_block(
             text=value_txt,
             desired_h_mm=req_h,
-            box_x=right_boxes[i]["x"],
-            box_y=right_boxes[i]["row"]["y"],
-            box_w=right_boxes[i]["w"],
-            box_h=right_boxes[i]["row"]["h"],
+            box_x=right_x,
+            box_y=row_y,
+            box_w=right_w,
+            box_h=row_h,
             weight="regular",
             align="left",
             pad_x=0.0,
-            max_lines=AUTO_WRAP_MAX_LINES,
-            first_line_anchor_h=ROW3_H if i == 2 else right_boxes[i]["row"]["h"],
+            max_lines=1,
         )
 
         for p in left_block["paths"]:
             d = mpl_path_to_svg_d(p)
             if d:
                 all_svg_paths.append(d)
-
         for p in right_block["paths"]:
             d = mpl_path_to_svg_d(p)
             if d:
@@ -949,6 +1000,104 @@ def generate_svg(
         meta["left_sizes"].append(left_block["used_height_summary"])
         meta["right_sizes"].append(right_block["used_height_summary"])
         meta["left_texts"].append(" / ".join(left_block["texts"]))
+        meta["right_texts"].append(" / ".join(right_block["texts"]))
+
+    if use_stacked_part:
+        stack = get_part_stack_layout(left_x, border_offset, row3_y)
+        part_lines = split_part_description_lines(part_desc)
+        if len(part_lines) == 1:
+            part_lines = [part_lines[0], ""]
+        elif len(part_lines) == 0:
+            part_lines = ["", ""]
+
+        label_block = fit_text_block(
+            text="Part description:",
+            desired_h_mm=fs3,
+            box_x=stack["label_x"],
+            box_y=stack["label_y"],
+            box_w=stack["label_w"],
+            box_h=stack["label_h"],
+            weight="bold",
+            align="left",
+            pad_x=0.0,
+            max_lines=1,
+        )
+
+        line1_block = fit_text_block(
+            text=part_lines[0],
+            desired_h_mm=fs3,
+            box_x=stack["value_x"],
+            box_y=stack["value_y"],
+            box_w=stack["value_w"],
+            box_h=stack["per_line_h"],
+            weight="regular",
+            align="left",
+            pad_x=0.0,
+            max_lines=1,
+        )
+
+        line2_block = fit_text_block(
+            text=part_lines[1],
+            desired_h_mm=fs3,
+            box_x=stack["value_x"],
+            box_y=stack["value_y"] + stack["per_line_h"] + stack["line_gap"],
+            box_w=stack["value_w"],
+            box_h=stack["per_line_h"],
+            weight="regular",
+            align="left",
+            pad_x=0.0,
+            max_lines=1,
+        ) if part_lines[1] else {"paths": [], "texts": [], "used_height_summary": 0.0}
+
+        for block in [label_block, line1_block, line2_block]:
+            for p in block["paths"]:
+                d = mpl_path_to_svg_d(p)
+                if d:
+                    all_svg_paths.append(d)
+
+        meta["left_sizes"].append(label_block["used_height_summary"])
+        meta["right_sizes"].append(max(line1_block["used_height_summary"], line2_block["used_height_summary"]))
+        meta["left_texts"].append("Part description:")
+        meta["right_texts"].append(" / ".join([x for x in part_lines if x]))
+    else:
+        left_block = fit_text_block(
+            text="Part description:",
+            desired_h_mm=fs3,
+            box_x=left_x,
+            box_y=row3_y,
+            box_w=left_w,
+            box_h=ROW3_H,
+            weight="bold",
+            align="left",
+            pad_x=0.0,
+            max_lines=1,
+        )
+        right_block = fit_text_block(
+            text=part_desc,
+            desired_h_mm=fs3,
+            box_x=right_x,
+            box_y=row3_y,
+            box_w=right_w,
+            box_h=max(ROW3_H, LABEL_H - row3_y - max(border_offset, PART_STACK_BOTTOM_MARGIN)),
+            weight="regular",
+            align="left",
+            pad_x=0.0,
+            max_lines=2,
+            first_line_anchor_h=ROW3_H,
+        )
+
+        for p in left_block["paths"]:
+            d = mpl_path_to_svg_d(p)
+            if d:
+                all_svg_paths.append(d)
+        for p in right_block["paths"]:
+            d = mpl_path_to_svg_d(p)
+            if d:
+                all_svg_paths.append(d)
+
+        meta["left_sizes"].append(left_block["used_height_summary"])
+        meta["right_sizes"].append(right_block["used_height_summary"])
+        meta["left_texts"].append("Part description:")
         meta["right_texts"].append(" / ".join(right_block["texts"]))
 
     hole_r = hole_dia / 2.0
@@ -978,17 +1127,31 @@ def generate_svg(
 
     guides_svg = ""
     if show_guides:
-        guides_svg = f"""
-        <g fill="none" stroke="{colors['guide_stroke']}" stroke-width="0.12" stroke-dasharray="0.8,0.8" opacity="0.75">
-            <rect x="{left_x}" y="{row1_y}" width="{left_w}" height="{ROW1_H}" />
-            <rect x="{left_x}" y="{row2_y}" width="{left_w}" height="{ROW2_H}" />
-            <rect x="{left_x}" y="{row3_y}" width="{left_w}" height="{ROW3_H}" />
-
-            <rect x="{right_x}" y="{row1_y}" width="{right_w}" height="{ROW1_H}" />
-            <rect x="{right_x}" y="{row2_y}" width="{right_w}" height="{ROW2_H}" />
-            <rect x="{right_x}" y="{row3_y}" width="{right_w}" height="{part_value_h}" />
-        </g>
-        """
+        if use_stacked_part:
+            stack = get_part_stack_layout(left_x, border_offset, row3_y)
+            guides_svg = f"""
+            <g fill="none" stroke="{colors['guide_stroke']}" stroke-width="0.12" stroke-dasharray="0.8,0.8" opacity="0.75">
+                <rect x="{left_x}" y="{row1_y}" width="{left_w}" height="{ROW1_H}" />
+                <rect x="{right_x}" y="{row1_y}" width="{right_w}" height="{ROW1_H}" />
+                <rect x="{left_x}" y="{row2_y}" width="{left_w}" height="{ROW2_H}" />
+                <rect x="{right_x}" y="{row2_y}" width="{right_w}" height="{ROW2_H}" />
+                <rect x="{stack['label_x']}" y="{stack['label_y']}" width="{stack['label_w']}" height="{stack['label_h']}" />
+                <rect x="{stack['value_x']}" y="{stack['value_y']}" width="{stack['value_w']}" height="{stack['per_line_h']}" />
+                <rect x="{stack['value_x']}" y="{stack['value_y'] + stack['per_line_h'] + stack['line_gap']}" width="{stack['value_w']}" height="{stack['per_line_h']}" />
+            </g>
+            """
+        else:
+            part_h = max(ROW3_H, LABEL_H - row3_y - max(border_offset, PART_STACK_BOTTOM_MARGIN))
+            guides_svg = f"""
+            <g fill="none" stroke="{colors['guide_stroke']}" stroke-width="0.12" stroke-dasharray="0.8,0.8" opacity="0.75">
+                <rect x="{left_x}" y="{row1_y}" width="{left_w}" height="{ROW1_H}" />
+                <rect x="{right_x}" y="{row1_y}" width="{right_w}" height="{ROW1_H}" />
+                <rect x="{left_x}" y="{row2_y}" width="{left_w}" height="{ROW2_H}" />
+                <rect x="{right_x}" y="{row2_y}" width="{right_w}" height="{ROW2_H}" />
+                <rect x="{left_x}" y="{row3_y}" width="{left_w}" height="{ROW3_H}" />
+                <rect x="{right_x}" y="{row3_y}" width="{right_w}" height="{part_h}" />
+            </g>
+            """
 
     text_svg = "\n".join(f'<path d="{d}" />' for d in all_svg_paths)
 
@@ -1011,6 +1174,7 @@ def generate_svg(
     </svg>"""
 
     return svg, meta
+
 
 # ------------------------------------------------------------
 # DXF generation
@@ -1035,20 +1199,9 @@ def generate_dxf(
     fs3,
     show_border=True,
 ):
+    use_stacked_part = should_use_stacked_part_layout(part_desc)
     rows = build_rows(owner, tool_number, part_desc)
     right_w = LABEL_W - right_x - RIGHT_MARGIN
-    part_value_h = max(ROW3_H, LABEL_H - row3_y - max(border_offset, PART_VALUE_BOTTOM_MARGIN))
-
-    left_boxes = [
-        {"x": left_x, "w": left_w, "row": row_box(row1_y, ROW1_H)},
-        {"x": left_x, "w": left_w, "row": row_box(row2_y, ROW2_H)},
-        {"x": left_x, "w": left_w, "row": row_box(row3_y, ROW3_H)},
-    ]
-    right_boxes = [
-        {"x": right_x, "w": right_w, "row": row_box(row1_y, ROW1_H)},
-        {"x": right_x, "w": right_w, "row": row_box(row2_y, ROW2_H)},
-        {"x": right_x, "w": right_w, "row": row_box(row3_y, part_value_h)},
-    ]
 
     doc = ezdxf.new("R2010")
     doc.header["$INSUNITS"] = 4
@@ -1090,7 +1243,7 @@ def generate_dxf(
     msp.add_circle((hole_left_x, hole_y), hole_r, dxfattribs={"layer": "HOLES"})
     msp.add_circle((hole_right_x, hole_y), hole_r, dxfattribs={"layer": "HOLES"})
 
-    def add_text_block_dxf(box_x, box_w, row_y, row_h, text_value, desired_h, weight, max_lines=1):
+    def add_text_block_dxf(box_x, box_w, row_y, row_h, text_value, desired_h, weight, max_lines=1, first_line_anchor_h=None):
         block = fit_text_block(
             text=text_value,
             desired_h_mm=desired_h,
@@ -1102,7 +1255,7 @@ def generate_dxf(
             align="left",
             pad_x=0.0,
             max_lines=max_lines,
-            first_line_anchor_h=ROW3_H if row_y == row3_y else row_h,
+            first_line_anchor_h=first_line_anchor_h,
         )
 
         for i, final_text in enumerate(block["texts"]):
@@ -1122,18 +1275,73 @@ def generate_dxf(
             )
             t.set_placement((line_box_x, y_dxf), align=TextEntityAlignment.LEFT)
 
-    add_text_block_dxf(left_boxes[0]["x"], left_boxes[0]["w"], row1_y, ROW1_H, rows[0][0], fs1, "bold", max_lines=1)
-    add_text_block_dxf(right_boxes[0]["x"], right_boxes[0]["w"], row1_y, ROW1_H, rows[0][1], fs1, "regular", max_lines=AUTO_WRAP_MAX_LINES)
+    # rows 1 and 2 single-line only
+    add_text_block_dxf(left_x, left_w, row1_y, ROW1_H, rows[0][0], fs1, "bold", max_lines=1)
+    add_text_block_dxf(right_x, right_w, row1_y, ROW1_H, rows[0][1], fs1, "regular", max_lines=1)
 
-    add_text_block_dxf(left_boxes[1]["x"], left_boxes[1]["w"], row2_y, ROW2_H, rows[1][0], fs2, "bold", max_lines=1)
-    add_text_block_dxf(right_boxes[1]["x"], right_boxes[1]["w"], row2_y, ROW2_H, rows[1][1], fs2, "regular", max_lines=AUTO_WRAP_MAX_LINES)
+    add_text_block_dxf(left_x, left_w, row2_y, ROW2_H, rows[1][0], fs2, "bold", max_lines=1)
+    add_text_block_dxf(right_x, right_w, row2_y, ROW2_H, rows[1][1], fs2, "regular", max_lines=1)
 
-    add_text_block_dxf(left_boxes[2]["x"], left_boxes[2]["w"], row3_y, ROW3_H, rows[2][0], fs3, "bold", max_lines=1)
-    add_text_block_dxf(right_boxes[2]["x"], right_boxes[2]["w"], row3_y, part_value_h, rows[2][1], fs3, "regular", max_lines=AUTO_WRAP_MAX_LINES)
+    if use_stacked_part:
+        stack = get_part_stack_layout(left_x, border_offset, row3_y)
+        part_lines = split_part_description_lines(part_desc)
+        if len(part_lines) == 1:
+            part_lines = [part_lines[0], ""]
+        elif len(part_lines) == 0:
+            part_lines = ["", ""]
+
+        add_text_block_dxf(
+            stack["label_x"],
+            stack["label_w"],
+            stack["label_y"],
+            stack["label_h"],
+            "Part description:",
+            fs3,
+            "bold",
+            max_lines=1,
+        )
+
+        add_text_block_dxf(
+            stack["value_x"],
+            stack["value_w"],
+            stack["value_y"],
+            stack["per_line_h"],
+            part_lines[0],
+            fs3,
+            "regular",
+            max_lines=1,
+        )
+
+        if part_lines[1]:
+            add_text_block_dxf(
+                stack["value_x"],
+                stack["value_w"],
+                stack["value_y"] + stack["per_line_h"] + stack["line_gap"],
+                stack["per_line_h"],
+                part_lines[1],
+                fs3,
+                "regular",
+                max_lines=1,
+            )
+    else:
+        part_h = max(ROW3_H, LABEL_H - row3_y - max(border_offset, PART_STACK_BOTTOM_MARGIN))
+        add_text_block_dxf(left_x, left_w, row3_y, ROW3_H, "Part description:", fs3, "bold", max_lines=1)
+        add_text_block_dxf(
+            right_x,
+            right_w,
+            row3_y,
+            part_h,
+            rows[2][1],
+            fs3,
+            "regular",
+            max_lines=2,
+            first_line_anchor_h=ROW3_H,
+        )
 
     stream = io.StringIO()
     doc.write(stream)
     return stream.getvalue().encode("utf-8")
+
 
 # ------------------------------------------------------------
 # ZIP generation
@@ -1252,20 +1460,20 @@ def build_batch_zip(
     zip_buffer.seek(0)
     return zip_buffer.getvalue(), pd.DataFrame(preview_records)
 
+
 # ------------------------------------------------------------
 # UI
 # ------------------------------------------------------------
 st.title("Laser Label Generator")
 st.caption(
     "Single and batch label generation with SVG vector outlines, DXF export, ZIP packaging, "
-    "and a dedicated custom Excel import tab."
+    "automatic custom Excel parsing, and stacked layout for very long part descriptions."
 )
 
 tab_single, tab_batch, tab_custom = st.tabs(
     ["Single label", "Batch CSV / Excel", "Custom Excel tools list"]
 )
 
-# Shared settings
 with st.sidebar:
     st.header("Shared geometry")
 
@@ -1307,7 +1515,7 @@ with tab_single:
         st.subheader("Text")
         owner = st.text_input("Property of", value=DEFAULT_OWNER, key="single_owner")
         tool_number = st.text_input("Tool number", value=DEFAULT_TOOL, key="single_tool")
-        part_desc = st.text_area("Part description", value=DEFAULT_PART, key="single_part", height=90)
+        part_desc = st.text_area("Part description", value=DEFAULT_PART, key="single_part", height=100)
 
         mode_single = st.selectbox("Mode", ALLOWED_MODES, index=ALLOWED_MODES.index(mode_default), key="single_mode")
         hole_dia_single = st.number_input("Hole diameter override (mm)", min_value=2.0, max_value=5.0, value=float(hole_dia_default), step=0.1)
@@ -1341,10 +1549,9 @@ with tab_single:
         render_svg_preview_card(svg_output, mode_single, preview_scale)
 
         st.caption(
+            f"Stacked part layout: {'Yes' if meta.get('stacked_part') else 'No'} | "
             f"Preview scale: {preview_scale:.1f} px/mm | "
-            f"Right column width: {meta['right_w']:.1f} mm | "
-            f"Used heights L: {meta['left_sizes'][0]:.2f}, {meta['left_sizes'][1]:.2f}, {meta['left_sizes'][2]:.2f} mm | "
-            f"R: {meta['right_sizes'][0]:.2f}, {meta['right_sizes'][1]:.2f}, {meta['right_sizes'][2]:.2f} mm"
+            f"Right column width: {meta['right_w']:.1f} mm"
         )
 
         svg_bytes = svg_output.encode("utf-8")
@@ -1542,7 +1749,6 @@ with tab_custom:
                 raw_custom_df.insert(0, "excel_row", range(2, 2 + len(raw_custom_df)))
 
                 custom_df = normalize_custom_template_df(raw_custom_df)
-
                 custom_df = custom_df.iloc[::-1].reset_index(drop=True)
                 custom_df.insert(0, "priority", range(1, len(custom_df) + 1))
             else:
@@ -1711,16 +1917,6 @@ with tab_custom:
         except Exception as e:
             st.error(f"Could not process custom file: {e}")
 
-with st.expander("Example CSV"):
-    st.code(
-        """property_of,tool_number,part_description,mode,hole_dia,hole_offset
-Stihl Group,89193,Steckzunge BA13-431-2100-A (id. 33193),Anodized aluminium (negative),3.2,4.3
-DAFRA,TL-00125,Punch holder,Normal,3.0,4.5
-Ledinek,TL-00126,Clamp plate,,,
-""",
-        language="csv",
-    )
-
 with st.expander("Custom Excel / CSV mapping"):
     st.code(
         """Primary parsing source
@@ -1729,16 +1925,13 @@ napis_na -> parse:
 - tool_number
 - part_description
 
-Supported text examples:
+Example supported:
 Property of: Husqvarna AB Tool number: 89202 Part 1: Charging Plate P23 left (id. 33202) Part 2: Charging Plate P23 right (id. 33203)
 
 Fallback columns
 lastnik -> property_of
 orodje or sifra_orodja -> tool_number
 izdelek -> part_description
-
-CSV can also use:
-napis_na,lastnik,orodje,sifra_orodja,izdelek
 """,
         language="text",
     )
@@ -1746,24 +1939,14 @@ napis_na,lastnik,orodje,sifra_orodja,izdelek
 with st.expander("Notes"):
     st.write(
         """
-Preview scale only affects on-screen display.
+Property of and Tool number stay single-line only.
 
-Exports remain unchanged:
-- SVG stays at 78.5 × 21 mm
-- DXF stays in real millimeter geometry
+Very long Part description automatically switches to stacked layout:
 
-Custom Excel tab behavior:
-- detects the header block automatically
-- reverses the row order so lower Excel rows get higher priority and appear on top
-- user selects rows with checkboxes
-- the lower preview table shows only selected rows for export
-- one SVG and one DXF is created per selected row
-- all generated files are packed into one ZIP
-- values are parsed from `napis_na` first, then fallback to separate columns
-- long text automatically tries to fit in 2 lines when needed
-- 2-line text starts at the same top line and then moves down
+Part description:
+    Part 1: ...
+    Part 2: ...
 
-If you use old .xls files, install xlrd:
-pip install xlrd
+This makes DXF much safer for long texts and avoids overflow beyond the plate.
 """
     )
