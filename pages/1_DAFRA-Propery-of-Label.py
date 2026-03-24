@@ -85,9 +85,9 @@ DEFAULT_ROW1_Y = 2.0
 DEFAULT_ROW2_Y = 7.0
 DEFAULT_ROW3_Y = 12.0
 
-ROW1_H = 4.2
-ROW2_H = 4.2
-ROW3_H = 3.8
+ROW1_H = 4.3
+ROW2_H = 4.3
+ROW3_H = 4.3
 
 DEFAULT_FS1 = 2.8
 DEFAULT_FS2 = 2.8
@@ -139,7 +139,7 @@ def cap_ref_for_weight(weight: str) -> float:
 PART_STACK_TRIGGER_LEN = 52
 PART_STACK_INDENT = 2.1
 PART_STACK_LABEL_H = 2.0
-PART_STACK_GAP = 0.35
+PART_STACK_GAP = 0.30
 PART_STACK_BOTTOM_MARGIN = 0.7
 MULTILINE_GAP_MM = 0.35
 
@@ -1771,6 +1771,15 @@ with st.sidebar:
             PART_STACK_TRIGGER_LEN,
             1,
             help="Part description switches to stacked 2-line layout when text exceeds this many characters OR overflows the right column width.",
+        )
+        st.markdown("**Stacked Part Description (Row 3)**")
+        part_stack_gap = st.slider(
+            "Gap between 2 lines in Row 3 (mm)",
+            min_value=0.1,
+            max_value=1.0,
+            value=PART_STACK_GAP,
+            step=0.05,
+            help="Vertical offset between the two lines of the part description when stacked layout is used."
         )
 
     st.divider()
