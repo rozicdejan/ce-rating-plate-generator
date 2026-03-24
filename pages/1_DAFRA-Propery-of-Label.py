@@ -109,6 +109,28 @@ def _pick_vector_font() -> str:
 
 VECTOR_FONT_FAMILY   = _pick_vector_font()
 
+def _get_cap_ref() -> float:
+    """
+    The cap-height of a capital 'H' at size=1 in the chosen font.
+    Used as the universal scale reference so that ALL texts in a row
+    render at the SAME visual height regardless of whether they contain
+    descenders (p, y, g …) or not.
+
+    Old approach: scale = desired_h / bbox.height
+      → 'Property of:' (has p,y descenders) bbox_h=0.976 → scale=2.05
+      → 'Tool number:'  (no descenders)      bbox_h=0.774 → scale=2.58
+      → Visual cap heights: 1.56mm vs 1.96mm at desired=2mm  (25% gap!)
+
+    New approach: scale = desired_h / CAP_REF
+      → same scale for every string → visual caps always equal ✓
+    """
+    from matplotlib.textpath import TextPath
+    from matplotlib.font_manager import FontProperties
+    prop = FontProperties(family=VECTOR_FONT_FAMILY)
+    return TextPath((0, 0), "H", size=1, prop=prop).get_extents().y1
+
+CAP_REF = _get_cap_ref()  # e.g. 0.7291 for DejaVu Sans
+
 PART_STACK_TRIGGER_LEN   = 52
 PART_STACK_INDENT        = 2.1
 PART_STACK_LABEL_H       = 2.0
@@ -587,6 +609,15 @@ def make_base_text_path(text, weight):
 
 
 def fit_text_for_box(text, desired_h_mm, box_w_mm, box_h_mm, weight):
+    """
+    Fit text into a box, returning (candidate, base_path, bbox, scale, used_h).
+
+    Scale is chosen so the CAP HEIGHT equals desired_h_mm (not bbox height).
+    This ensures every string in the same row renders at the same visual size
+    regardless of descenders — fixing the 25% height mismatch in the old code.
+
+    used_h is the rendered CAP height (not full bbox), used for row spacing.
+    """
     raw = (text or "").strip()
     if not raw:
         return "", None, None, 1.0, 0.0
@@ -596,31 +627,55 @@ def fit_text_for_box(text, desired_h_mm, box_w_mm, box_h_mm, weight):
         base_path, bbox = make_base_text_path(candidate, weight)
         if base_path is None or bbox is None:
             continue
-        target_h = min(desired_h_mm, box_h_mm)
-        scale    = target_h / bbox.height
+
+        # Scale so cap height = desired_h_mm, but clamp so full glyph fits box_h
+        scale_desired = desired_h_mm / CAP_REF
+        scale_box_h   = box_h_mm / bbox.height   # prevents descenders clipping box
+        scale         = min(scale_desired, scale_box_h)
+        used_h        = CAP_REF * scale           # actual rendered cap height
+
         if bbox.width * scale <= box_w_mm:
-            return candidate, base_path, bbox, scale, bbox.height * scale
+            return candidate, base_path, bbox, scale, used_h
+
+        # Text too wide — shrink to fit width
         scale_w = box_w_mm / bbox.width
-        h_at_w  = bbox.height * scale_w
-        if h_at_w >= MIN_TEXT_HEIGHT_MM and h_at_w <= box_h_mm:
-            return candidate, base_path, bbox, scale_w, h_at_w
+        used_h_w = CAP_REF * scale_w
+        if used_h_w >= MIN_TEXT_HEIGHT_MM and bbox.height * scale_w <= box_h_mm:
+            return candidate, base_path, bbox, scale_w, used_h_w
 
     fallback  = "..."
     base_path, bbox = make_base_text_path(fallback, weight)
     if base_path is None or bbox is None:
         return "", None, None, 1.0, 0.0
-    target_h = min(desired_h_mm, box_h_mm)
-    scale    = min(target_h / bbox.height, box_w_mm / bbox.width)
-    return fallback, base_path, bbox, scale, bbox.height * scale
+    scale_desired = desired_h_mm / CAP_REF
+    scale_box_h   = box_h_mm / bbox.height
+    scale_width   = box_w_mm / bbox.width
+    scale         = min(scale_desired, scale_box_h, scale_width)
+    return fallback, base_path, bbox, scale, CAP_REF * scale
 
 
 def place_path_in_box(base_path, scale, box_x, box_y, box_w, box_h, align="left", pad_x=0.0):
+    """
+    Place a scaled glyph path inside a row box.
+
+    Alignment strategy: BASELINE ALIGNMENT
+    - bbox.y0 (after scale(s,-s)) = -(cap+ascender height) = negative
+    - cap_h = -bbox.y0  = the visual cap height in mm
+    - ty = box_y + (box_h + cap_h) / 2
+      → centers the cap-height portion in the box
+      → all texts in same row land on the same baseline regardless of descenders
+
+    This means "Property of:" and "Tool number:" and "89193" all have their
+    tops and baselines aligned — even though their full bboxes differ.
+    """
     path = base_path.transformed(Affine2D().scale(scale, -scale))
     bbox = path.get_extents()
     tx   = (box_x + (box_w - bbox.width) / 2.0 - bbox.x0 if align == "center"
             else box_x + box_w - pad_x - bbox.x1 if align == "right"
             else box_x + pad_x - bbox.x0)
-    ty   = box_y + (box_h - bbox.height) / 2.0 - bbox.y0
+    # Baseline alignment: center cap portion in box (not full bbox)
+    cap_h = -bbox.y0           # rendered cap height (positive)
+    ty    = box_y + (box_h + cap_h) / 2.0
     return path.transformed(Affine2D().translate(tx, ty))
 
 
@@ -656,13 +711,19 @@ def fit_text_block(
         "score": (1000 if single_complete else 0) + sh * 100 + len(sf),
     }
 
-    if force_single_if_fits and single_complete and sbbox is not None:
-        single_truly_fits = sbbox.width * (desired_h_mm / sbbox.height) <= box_w
+    # Does the text fit at the DESIRED height without shrinking?
+    # If yes → always stay on one line, skip two-line check entirely.
+    # This is the universal rule: wrap only when text overflows at intended size.
+    # (force_single_if_fits is kept for the Property-of centering fix but
+    #  the overflow check now applies to every row unconditionally.)
+    if single_complete and sbbox is not None:
+        # Use CAP_REF scale to check width — matches fit_text_for_box behaviour
+        single_truly_fits = sbbox.width * (desired_h_mm / CAP_REF) <= box_w
     else:
         single_truly_fits = False
 
     if (
-        not (force_single_if_fits and single_truly_fits)
+        not single_truly_fits           # only wrap when text actually overflows
         and max_lines >= 2
         and box_h >= (MIN_TEXT_HEIGHT_MM * 2 + MULTILINE_GAP_MM)
     ):
@@ -950,10 +1011,10 @@ def render_svg_preview_card(svg_output, mode, preview_scale):
 # Shared label layout (single source of truth for SVG + DXF)
 # ============================================================
 
-def should_use_stacked_part_layout(part_desc):
+def should_use_stacked_part_layout(part_desc, wrap_trigger=PART_STACK_TRIGGER_LEN):
     raw  = "" if part_desc is None or pd.isna(part_desc) else str(part_desc)
     flat = normalize_space(raw.replace("\n", " "))
-    return "\n" in raw or bool(re.search(r"part\s*2\s*:", raw, re.IGNORECASE)) or len(flat) >= PART_STACK_TRIGGER_LEN
+    return "\n" in raw or bool(re.search(r"part\s*2\s*:", raw, re.IGNORECASE)) or len(flat) >= wrap_trigger
 
 
 def split_part_description_lines(part_desc):
@@ -973,14 +1034,14 @@ def split_part_description_lines(part_desc):
     return [candidates[0][0], candidates[0][1]] if candidates else [flat]
 
 
-def get_part_stack_layout(left_x, border_offset, row3_y):
+def get_part_stack_layout(left_x, border_offset, row3_y, right_margin=RIGHT_MARGIN):
     vx  = left_x + PART_STACK_INDENT
     vy  = row3_y + PART_STACK_LABEL_H + PART_STACK_GAP
-    vw  = LABEL_W - border_offset - RIGHT_MARGIN - vx
+    vw  = LABEL_W - border_offset - right_margin - vx
     vht = LABEL_H - PART_STACK_BOTTOM_MARGIN - vy
     return {
         "label_x": left_x, "label_y": row3_y,
-        "label_w": LABEL_W - left_x - RIGHT_MARGIN, "label_h": PART_STACK_LABEL_H,
+        "label_w": LABEL_W - left_x - right_margin, "label_h": PART_STACK_LABEL_H,
         "value_x": vx, "value_y": vy, "value_w": vw, "value_h_total": vht,
         "line_gap": PART_STACK_GAP,
         "per_line_h": max(MIN_TEXT_HEIGHT_MM, (vht - PART_STACK_GAP) / 2.0),
@@ -989,10 +1050,11 @@ def get_part_stack_layout(left_x, border_offset, row3_y):
 
 def compute_label_layout(owner, tool_number, part_desc,
                           left_x, left_w, right_x, row1_y, row2_y, row3_y,
-                          fs1, fs2, fs3, border_offset):
-    use_stacked = should_use_stacked_part_layout(part_desc)
+                          fs1, fs2, fs3, border_offset,
+                          right_margin=RIGHT_MARGIN, wrap_trigger=PART_STACK_TRIGGER_LEN):
+    use_stacked = should_use_stacked_part_layout(part_desc, wrap_trigger=wrap_trigger)
     rows        = build_rows(owner, tool_number, part_desc)
-    right_w     = LABEL_W - right_x - RIGHT_MARGIN
+    right_w     = LABEL_W - right_x - right_margin
 
     lb0 = fit_text_block(rows[0][0], fs1, left_x,  row1_y, left_w,  ROW1_H,           "bold",    max_lines=1)
     rb0 = fit_text_block(rows[0][1], fs1, right_x, row1_y, right_w, row2_y - row1_y,  "regular", max_lines=2, first_line_anchor_h=ROW1_H, force_single_if_fits=True)
@@ -1000,7 +1062,7 @@ def compute_label_layout(owner, tool_number, part_desc,
     rb1 = fit_text_block(rows[1][1], fs2, right_x, row2_y, right_w, ROW2_H,           "regular", max_lines=1)
 
     if use_stacked:
-        stack      = get_part_stack_layout(left_x, border_offset, row3_y)
+        stack      = get_part_stack_layout(left_x, border_offset, row3_y, right_margin=right_margin)
         part_lines = split_part_description_lines(part_desc)
         part_lines = (part_lines + [""])[:2]
         lb2  = fit_text_block("Part description:", fs3, stack["label_x"], stack["label_y"], stack["label_w"], stack["label_h"], "bold", max_lines=1)
@@ -1029,12 +1091,14 @@ def compute_label_layout(owner, tool_number, part_desc,
 def generate_svg(owner, tool_number, part_desc, mode,
                  hole_dia, hole_offset, corner_r, border_offset,
                  left_x, left_w, right_x, row1_y, row2_y, row3_y,
-                 fs1, fs2, fs3, show_guides=False, show_border=True, show_holes=True):
+                 fs1, fs2, fs3, show_guides=False, show_border=True, show_holes=True,
+                 right_margin=RIGHT_MARGIN, wrap_trigger=PART_STACK_TRIGGER_LEN):
 
     colors  = get_mode_colors(mode)
     layout  = compute_label_layout(owner, tool_number, part_desc,
                                    left_x, left_w, right_x, row1_y, row2_y, row3_y,
-                                   fs1, fs2, fs3, border_offset)
+                                   fs1, fs2, fs3, border_offset,
+                                   right_margin=right_margin, wrap_trigger=wrap_trigger)
     right_w = layout["right_w"]
     row2    = layout["row2_blocks"]
 
@@ -1145,11 +1209,13 @@ def generate_svg(owner, tool_number, part_desc, mode,
 def generate_dxf(owner, tool_number, part_desc, mode,
                  hole_dia, hole_offset, corner_r, border_offset,
                  left_x, left_w, right_x, row1_y, row2_y, row3_y,
-                 fs1, fs2, fs3, show_border=True, show_holes=True):
+                 fs1, fs2, fs3, show_border=True, show_holes=True,
+                 right_margin=RIGHT_MARGIN, wrap_trigger=PART_STACK_TRIGGER_LEN):
 
     layout = compute_label_layout(owner, tool_number, part_desc,
                                   left_x, left_w, right_x, row1_y, row2_y, row3_y,
-                                  fs1, fs2, fs3, border_offset)
+                                  fs1, fs2, fs3, border_offset,
+                                  right_margin=right_margin, wrap_trigger=wrap_trigger)
     row2   = layout["row2_blocks"]
 
     doc = ezdxf.new("R2010")
@@ -1199,7 +1265,8 @@ def generate_dxf(owner, tool_number, part_desc, mode,
 def build_batch_zip(df, default_mode, default_hole_dia, default_hole_offset,
                     corner_r, border_offset, left_x, left_w, right_x,
                     row1_y, row2_y, row3_y, fs1, fs2, fs3,
-                    show_border, show_holes, include_svg=True, include_dxf=True, progress_bar=None):
+                    show_border, show_holes, include_svg=True, include_dxf=True,
+                    progress_bar=None, right_margin=RIGHT_MARGIN, wrap_trigger=PART_STACK_TRIGGER_LEN):
     required = ["property_of", "tool_number", "part_description"]
     missing  = [c for c in required if c not in df.columns]
     if missing:
@@ -1222,7 +1289,8 @@ def build_batch_zip(df, default_mode, default_hole_dia, default_hole_offset,
                           hole_dia=hd, hole_offset=ho, corner_r=corner_r, border_offset=border_offset,
                           left_x=left_x, left_w=left_w, right_x=right_x,
                           row1_y=row1_y, row2_y=row2_y, row3_y=row3_y,
-                          fs1=fs1, fs2=fs2, fs3=fs3, show_holes=show_holes)
+                          fs1=fs1, fs2=fs2, fs3=fs3, show_holes=show_holes,
+                          right_margin=right_margin, wrap_trigger=wrap_trigger)
             if include_svg:
                 svg_out, _ = generate_svg(**kw, show_guides=False, show_border=show_border)
                 zf.writestr(f"{base}.svg", svg_out.encode("utf-8"))
@@ -1364,13 +1432,49 @@ with st.sidebar:
         corner_r      = st.slider("Corner radius (mm)", 0.0, 5.0, DEFAULT_CORNER_R,      0.1)
         border_offset = st.slider("Border inset (mm)",  0.0, 1.0, DEFAULT_BORDER_OFFSET,  0.05)
     with st.expander("📐 Advanced column layout"):
-        st.caption("Only change if your physical label template differs.")
-        left_x  = st.slider("Left column X (mm)",     6.0,  14.0, DEFAULT_LEFT_X,  0.1)
-        left_w  = st.slider("Left column width (mm)", 16.0, 28.0, DEFAULT_LEFT_W,  0.1)
-        right_x = st.slider("Right column X (mm)",    26.0, 40.0, DEFAULT_RIGHT_X, 0.1)
-        row1_y  = st.slider("Row 1 top (mm)",          1.0,  6.0, DEFAULT_ROW1_Y,  0.1)
-        row2_y  = st.slider("Row 2 top (mm)",          5.0, 11.0, DEFAULT_ROW2_Y,  0.1)
-        row3_y  = st.slider("Row 3 top (mm)",         10.0, 17.0, DEFAULT_ROW3_Y,  0.1)
+        st.caption(
+            "Adjust these when your physical label template has different spacing. "
+            "**Right text end** = Label width − Right margin. "
+            "**Right column width** = Label width − Right column X − Right margin."
+        )
+
+        # ── Column positions ──────────────────────────────────────────────────
+        st.markdown("**Column positions**")
+        left_x  = st.slider("Left column start X (mm)",  6.0,  14.0, DEFAULT_LEFT_X,  0.1,
+            help="X position where label text (e.g. 'Property of:') starts")
+        left_w  = st.slider("Left column width (mm)",   16.0,  28.0, DEFAULT_LEFT_W,  0.1,
+            help="Width of the label column (bold left side)")
+        right_x = st.slider("Right column start X (mm)",26.0,  40.0, DEFAULT_RIGHT_X, 0.1,
+            help="X position where value text (e.g. 'Stihl Group') starts")
+        right_margin = st.slider("Right margin (mm)",    0.5,   5.0,  RIGHT_MARGIN,    0.1,
+            help="Gap between the rightmost text edge and the label border. "
+                 "Text cannot extend beyond: Label width − Right margin = "
+                 f"{LABEL_W:.1f} − right_margin mm")
+
+        # Live readout so user sees actual available text width
+        computed_right_w = LABEL_W - right_x - right_margin
+        st.caption(
+            f"→ Right column text width: **{computed_right_w:.1f} mm**  "
+            f"(text runs from x={right_x:.1f} to x={LABEL_W-right_margin:.1f})"
+        )
+
+        # ── Row positions ─────────────────────────────────────────────────────
+        st.markdown("**Row vertical positions**")
+        row1_y  = st.slider("Row 1 top (mm)",  1.0,  6.0, DEFAULT_ROW1_Y,  0.1,
+            help="Top edge of 'Property of' row")
+        row2_y  = st.slider("Row 2 top (mm)",  5.0, 11.0, DEFAULT_ROW2_Y,  0.1,
+            help="Top edge of 'Tool number' row")
+        row3_y  = st.slider("Row 3 top (mm)", 10.0, 17.0, DEFAULT_ROW3_Y,  0.1,
+            help="Top edge of 'Part description' row")
+
+        # ── Wrap trigger ──────────────────────────────────────────────────────
+        st.markdown("**Two-line wrap trigger**")
+        wrap_trigger = st.slider(
+            "Part description char trigger", 20, 80, PART_STACK_TRIGGER_LEN, 1,
+            help="Part description switches to stacked 2-line layout when text "
+                 "exceeds this many characters OR overflows the right column width. "
+                 "The overflow check is always active regardless of this value."
+        )
 
     st.divider()
     st.caption(f"💾 Storage: `{STORAGE_DIR.resolve()}`")
@@ -1404,8 +1508,8 @@ with tab_single:
         tool_number = st.text_input("Tool number",  value=DEFAULT_TOOL,  key="single_tool")
         part_desc   = st.text_area("Part description", value=DEFAULT_PART, key="single_part", height=100)
         cc = len(part_desc)
-        st.caption(f"{cc} chars — {'⚡ Stacked layout active' if cc >= PART_STACK_TRIGGER_LEN else f'{PART_STACK_TRIGGER_LEN - cc} until stacked'}")
-        st.progress(min(cc / PART_STACK_TRIGGER_LEN, 1.0))
+        st.caption(f"{cc} chars — {'⚡ Stacked layout active' if cc >= wrap_trigger else f'{wrap_trigger - cc} until stacked'}")
+        st.progress(min(cc / wrap_trigger, 1.0))
         st.divider()
         mode_single        = st.selectbox("Engraving mode", ALLOWED_MODES, index=ALLOWED_MODES.index(mode_default), key="single_mode")
         hole_dia_single    = st.number_input("Hole diameter (mm)",         min_value=2.0, max_value=5.0, value=float(hole_dia_default), step=0.1)
@@ -1420,7 +1524,8 @@ with tab_single:
                                      left_x=left_x, left_w=left_w, right_x=right_x,
                                      row1_y=row1_y, row2_y=row2_y, row3_y=row3_y,
                                      fs1=fs1, fs2=fs2, fs3=fs3,
-                                     show_guides=show_guides, show_border=show_border, show_holes=show_holes)
+                                     show_guides=show_guides, show_border=show_border, show_holes=show_holes,
+                                     right_margin=right_margin, wrap_trigger=wrap_trigger)
         render_svg_preview_card(svg_out, mode_single, preview_scale)
         st.caption(f"Layout: {'stacked' if meta.get('stacked_part') else 'inline'} | Right col: {meta['right_w']:.1f} mm")
         dxf_bytes = generate_dxf(owner=owner, tool_number=tool_number, part_desc=part_desc,
@@ -1428,7 +1533,8 @@ with tab_single:
                                   corner_r=corner_r, border_offset=border_offset,
                                   left_x=left_x, left_w=left_w, right_x=right_x,
                                   row1_y=row1_y, row2_y=row2_y, row3_y=row3_y,
-                                  fs1=fs1, fs2=fs2, fs3=fs3, show_border=show_border, show_holes=show_holes)
+                                  fs1=fs1, fs2=fs2, fs3=fs3, show_border=show_border, show_holes=show_holes,
+                                  right_margin=right_margin, wrap_trigger=wrap_trigger)
         base_name = safe_filename(tool_number.strip() or "laser_label")
         c1, c2 = st.columns(2)
         with c1:
@@ -1480,7 +1586,8 @@ with tab_batch:
                 corner_r=corner_r, border_offset=border_offset,
                 left_x=left_x, left_w=left_w, right_x=right_x,
                 row1_y=row1_y, row2_y=row2_y, row3_y=row3_y,
-                fs1=fs1, fs2=fs2, fs3=fs3, show_guides=False, show_border=show_border, show_holes=show_holes)
+                fs1=fs1, fs2=fs2, fs3=fs3, show_guides=False, show_border=show_border, show_holes=show_holes,
+                                     right_margin=right_margin, wrap_trigger=wrap_trigger)
             render_svg_preview_card(svg_prev, sel_mode, preview_scale)
 
             st.divider()
@@ -1499,7 +1606,8 @@ with tab_batch:
                         left_x=left_x, left_w=left_w, right_x=right_x,
                         row1_y=row1_y, row2_y=row2_y, row3_y=row3_y,
                         fs1=fs1, fs2=fs2, fs3=fs3, show_border=show_border, show_holes=show_holes,
-                        include_svg=include_svg_b, include_dxf=include_dxf_b, progress_bar=prog)
+                        include_svg=include_svg_b, include_dxf=include_dxf_b, progress_bar=prog,
+                        right_margin=right_margin, wrap_trigger=wrap_trigger)
                     prog.empty()
                     st.success(f"✅ {len(mdf)} labels generated.")
                     st.download_button(f"⬇️ Download ZIP ({len(mdf)} labels)", data=zb,
@@ -1623,7 +1731,8 @@ with tab_custom:
                 corner_r=corner_r, border_offset=border_offset,
                 left_x=left_x, left_w=left_w, right_x=right_x,
                 row1_y=row1_y, row2_y=row2_y, row3_y=row3_y,
-                fs1=fs1, fs2=fs2, fs3=fs3, show_guides=False, show_border=show_border, show_holes=show_holes)
+                fs1=fs1, fs2=fs2, fs3=fs3, show_guides=False, show_border=show_border, show_holes=show_holes,
+                                     right_margin=right_margin, wrap_trigger=wrap_trigger)
             render_svg_preview_card(browse_svg, mode_default, preview_scale)
 
             browse_dxf = generate_dxf(
@@ -1634,7 +1743,8 @@ with tab_custom:
                 corner_r=corner_r, border_offset=border_offset,
                 left_x=left_x, left_w=left_w, right_x=right_x,
                 row1_y=row1_y, row2_y=row2_y, row3_y=row3_y,
-                fs1=fs1, fs2=fs2, fs3=fs3, show_border=show_border, show_holes=show_holes)
+                fs1=fs1, fs2=fs2, fs3=fs3, show_border=show_border, show_holes=show_holes,
+                                     right_margin=right_margin, wrap_trigger=wrap_trigger)
             browse_base = safe_filename(str(browse_row.get("tool_number","")) or "laser_label")
             b1, b2 = st.columns(2)
             with b1:
@@ -1691,7 +1801,8 @@ with tab_custom:
                         left_x=left_x, left_w=left_w, right_x=right_x,
                         row1_y=row1_y, row2_y=row2_y, row3_y=row3_y,
                         fs1=fs1, fs2=fs2, fs3=fs3, show_border=show_border, show_holes=show_holes,
-                        progress_bar=prog)
+                        progress_bar=prog,
+                        right_margin=right_margin, wrap_trigger=wrap_trigger)
                     prog.empty()
                     st.success(f"✅ {len(mdf)} labels generated.")
                     st.download_button(f"⬇️ Download ZIP ({len(mdf)} labels)", data=zb,
