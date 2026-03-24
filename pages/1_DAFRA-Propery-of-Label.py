@@ -11,7 +11,6 @@ from collections import Counter
 
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 import ezdxf
 
 from matplotlib.textpath import TextPath
@@ -36,6 +35,28 @@ div[data-testid="stDownloadButton"] > button { font-weight: 600; letter-spacing:
 div[data-testid="stTabs"] button[role="tab"] { font-weight: 600; font-size: 0.88rem; letter-spacing: 0.03em; }
 div[data-testid="stAlert"] { border-radius: 6px; }
 hr { margin: 0.75rem 0; border-color: #e0e0e0; }
+
+/* Responsive SVG preview */
+.label-preview-card {
+    border-radius: 12px;
+    border: 1px solid #d0d0d0;
+    padding: 16px;
+}
+.label-preview-wrap {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
+.label-preview-inner {
+    width: min(100%, 1100px);
+}
+.label-preview-inner svg {
+    width: 100% !important;
+    height: auto !important;
+    display: block;
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -72,8 +93,8 @@ DEFAULT_FS1 = 2.8
 DEFAULT_FS2 = 2.8
 DEFAULT_FS3 = 1.8
 
-MIN_TEXT_HEIGHT_MM   = 1.2
-RIGHT_MARGIN         = 2.2
+MIN_TEXT_HEIGHT_MM = 1.2
+RIGHT_MARGIN = 2.2
 
 def _pick_vector_font() -> str:
     """
@@ -260,6 +281,7 @@ class InventoryStore:
             tn = str(row.get("tool_number", "")).strip()
             prop_of = str(row.get("property_of", "")).strip()
             part_d = str(row.get("part_description", "")).strip()
+            excel_row = row.get("excel_row", None)
             priority = batch_priority_start - i
 
             if tn in existing_by_num:
@@ -272,6 +294,7 @@ class InventoryStore:
                     unchanged += 1
                     existing["priority"] = priority
                     existing["updated_at"] = now
+                    existing["excel_row"] = excel_row
                 else:
                     existing["property_of"] = prop_of
                     existing["part_description"] = part_d
@@ -279,6 +302,7 @@ class InventoryStore:
                     existing["source_hash"] = source_hash
                     existing["priority"] = priority
                     existing["updated_at"] = now
+                    existing["excel_row"] = excel_row
                     updated += 1
             else:
                 self._data["tools"].append(
@@ -286,6 +310,7 @@ class InventoryStore:
                         "tool_number": tn,
                         "property_of": prop_of,
                         "part_description": part_d,
+                        "excel_row": excel_row,
                         "source_file": source_file,
                         "source_hash": source_hash,
                         "added_at": now,
@@ -675,7 +700,7 @@ def fit_text_block(
     sf, sb, sbbox, ss, sh_cap, sh_bbox = fit_text_for_box(raw_single, desired_h_mm, box_w, box_h, weight)
     single_complete = sf == raw_single
 
-    if single_complete and sbbox is not None:
+    if sbbox is not None:
         cap_ref = cap_ref_for_weight(weight)
         single_truly_fits = (
             sbbox.width * (desired_h_mm / cap_ref) <= box_w
@@ -683,6 +708,32 @@ def fit_text_block(
         )
     else:
         single_truly_fits = False
+
+    if force_single_if_fits and single_truly_fits:
+        placed = (
+            place_path_in_box(
+                sb,
+                ss,
+                box_x,
+                box_y,
+                box_w,
+                min(first_line_anchor_h, box_h) if first_line_anchor_h is not None else box_h,
+                align=align,
+                pad_x=pad_x,
+                cap_h=sh_cap,
+            )
+            if sb is not None
+            else None
+        )
+        return {
+            "texts": [sf],
+            "paths": [placed] if placed is not None else [],
+            "used_heights": [sh_cap],
+            "used_bbox_heights": [sh_bbox],
+            "used_height_summary": sh_cap,
+            "line_boxes": [(box_x, box_y, box_w, min(first_line_anchor_h, box_h) if first_line_anchor_h is not None else box_h)],
+            "line_count": 1,
+        }
 
     best = {
         "texts": [sf],
@@ -710,26 +761,26 @@ def fit_text_block(
                 if not t1 or not t2:
                     continue
 
-                complete = t1 == l1 and t2 == l2
-                score = (
-                    (2000 if complete else 0)
-                    + min(h1_cap, h2_cap) * 100
-                    + len(t1) + len(t2)
-                    - abs(len(l1) - len(l2)) * 0.15
-                )
-                if complete and not single_complete:
-                    score += 500
-                if score > best["score"]:
-                    best = {
-                        "texts": [t1, t2],
-                        "bases": [b1, b2],
-                        "scales": [s1, s2],
-                        "used_heights": [h1_cap, h2_cap],
-                        "used_bbox_heights": [h1_bbox, h2_bbox],
-                        "line_box_h": lbh,
-                        "gap": gap,
-                        "score": score,
-                    }
+                    complete = t1 == l1 and t2 == l2
+                    score = (
+                        (2000 if complete else 0)
+                        + min(h1_cap, h2_cap) * 100
+                        + len(t1) + len(t2)
+                        - abs(len(l1) - len(l2)) * 0.15
+                    )
+                    if complete and not single_complete:
+                        score += 500
+                    if score > best["score"]:
+                        best = {
+                            "texts": [t1, t2],
+                            "bases": [b1, b2],
+                            "scales": [s1, s2],
+                            "used_heights": [h1_cap, h2_cap],
+                            "used_bbox_heights": [h1_bbox, h2_bbox],
+                            "line_box_h": lbh,
+                            "gap": gap,
+                            "score": score,
+                        }
 
     paths, line_boxes = [], []
     if len(best["texts"]) == 1:
@@ -789,6 +840,18 @@ def fit_text_block(
     }
 
 
+def empty_text_block():
+    return {
+        "texts": [],
+        "paths": [],
+        "used_heights": [],
+        "used_bbox_heights": [],
+        "used_height_summary": 0.0,
+        "line_boxes": [],
+        "line_count": 0,
+    }
+
+
 def block_line_height(block):
     hs = [float(h) for h in block.get("used_heights", []) if h and h > 0]
     return min(hs) if hs else 0.0
@@ -806,6 +869,52 @@ def fit_row_pair_same_height(left_text, right_text, desired_h_mm, left_cfg, righ
     left_block = fit_text_block(left_text, common_h, **left_cfg)
     right_block = fit_text_block(right_text, common_h, **right_cfg)
     return left_block, right_block, common_h
+
+
+def fit_stacked_triplet_same_height(label_text, line1_text, line2_text, desired_h_mm, stack):
+    label_cfg = dict(
+        box_x=stack["label_x"],
+        box_y=stack["label_y"],
+        box_w=stack["label_w"],
+        box_h=stack["label_h"],
+        weight="bold",
+        max_lines=1,
+    )
+    line1_cfg = dict(
+        box_x=stack["value_x"],
+        box_y=stack["value_y"],
+        box_w=stack["value_w"],
+        box_h=stack["per_line_h"],
+        weight="regular",
+        max_lines=1,
+    )
+    line2_cfg = dict(
+        box_x=stack["value_x"],
+        box_y=stack["value_y"] + stack["per_line_h"] + stack["line_gap"],
+        box_w=stack["value_w"],
+        box_h=stack["per_line_h"],
+        weight="regular",
+        max_lines=1,
+    )
+
+    label_block = fit_text_block(label_text, desired_h_mm, **label_cfg)
+    line1_block = fit_text_block(line1_text, desired_h_mm, **line1_cfg)
+    line2_block = fit_text_block(line2_text, desired_h_mm, **line2_cfg) if line2_text else empty_text_block()
+
+    heights = [
+        h for h in [
+            block_line_height(label_block),
+            block_line_height(line1_block),
+            block_line_height(line2_block),
+        ] if h > 0
+    ]
+    common_h = max(MIN_TEXT_HEIGHT_MM, min(heights)) if heights else desired_h_mm
+
+    label_block = fit_text_block(label_text, common_h, **label_cfg)
+    line1_block = fit_text_block(line1_text, common_h, **line1_cfg)
+    line2_block = fit_text_block(line2_text, common_h, **line2_cfg) if line2_text else empty_text_block()
+
+    return label_block, line1_block, line2_block, common_h
 
 
 def mpl_path_to_svg_d(path_obj):
@@ -974,14 +1083,6 @@ def make_unique_base_names(names):
     return result
 
 
-def make_preview_svg(svg_text, label_w_mm, label_h_mm, px_per_mm):
-    pw = label_w_mm * px_per_mm
-    ph = label_h_mm * px_per_mm
-    s = re.sub(r'width="[^"]+"', f'width="{pw}px"', svg_text, count=1)
-    s = re.sub(r'height="[^"]+"', f'height="{ph}px"', s, count=1)
-    return s
-
-
 def selection_editor(df, key, display_columns, checkbox_label="Print"):
     work_df = df.copy()
     if "print" not in work_df.columns:
@@ -1004,16 +1105,19 @@ def selection_editor(df, key, display_columns, checkbox_label="Print"):
     )
 
 
-def render_svg_preview_card(svg_output, mode, preview_scale):
+def render_svg_preview_card(svg_output, mode):
     colors = get_mode_colors(mode)
-    preview_svg = make_preview_svg(svg_output, LABEL_W, LABEL_H, preview_scale)
-    ph = int(LABEL_H * preview_scale + 80)
-    components.html(
-        f"""<div style="background:{colors['preview_bg']};padding:20px;border-radius:12px;
-            border:1px solid #d0d0d0;min-height:{ph}px;display:flex;
-            justify-content:center;align-items:center;overflow:auto;">
-            <div style="padding:10px;border-radius:10px;">{preview_svg}</div></div>""",
-        height=ph + 40,
+    st.markdown(
+        f"""
+        <div class="label-preview-card" style="background:{colors['preview_bg']};">
+            <div class="label-preview-wrap">
+                <div class="label-preview-inner">
+                    {svg_output}
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
 
@@ -1115,48 +1219,14 @@ def compute_label_layout(
         part_lines = split_part_description_lines(part_desc)
         part_lines = (part_lines + [""])[:2]
 
-        lb2 = fit_text_block(
-            "Part description:",
-            fs3,
-            stack["label_x"],
-            stack["label_y"],
-            stack["label_w"],
-            stack["label_h"],
-            "bold",
-            max_lines=1,
+        lb2, rb2a, rb2b, common_part_h = fit_stacked_triplet_same_height(
+            label_text="Part description:",
+            line1_text=part_lines[0],
+            line2_text=part_lines[1],
+            desired_h_mm=fs3,
+            stack=stack,
         )
-        rb2a = fit_text_block(
-            part_lines[0],
-            fs3,
-            stack["value_x"],
-            stack["value_y"],
-            stack["value_w"],
-            stack["per_line_h"],
-            "regular",
-            max_lines=1,
-        )
-        rb2b = (
-            fit_text_block(
-                part_lines[1],
-                fs3,
-                stack["value_x"],
-                stack["value_y"] + stack["per_line_h"] + stack["line_gap"],
-                stack["value_w"],
-                stack["per_line_h"],
-                "regular",
-                max_lines=1,
-            )
-            if part_lines[1]
-            else {
-                "paths": [],
-                "texts": [],
-                "used_height_summary": 0.0,
-                "line_boxes": [],
-                "used_heights": [],
-                "used_bbox_heights": [],
-                "line_count": 0,
-            }
-        )
+
         row2 = {
             "stacked": True,
             "stack": stack,
@@ -1164,6 +1234,7 @@ def compute_label_layout(
             "label_block": lb2,
             "line1_block": rb2a,
             "line2_block": rb2b,
+            "common_part_h": common_part_h,
         }
     else:
         ph = max(ROW3_H, LABEL_H - row3_y - max(border_offset, PART_STACK_BOTTOM_MARGIN))
@@ -1248,7 +1319,14 @@ def generate_svg(
     row2 = layout["row2_blocks"]
 
     all_paths = []
-    meta = {"left_sizes": [], "right_sizes": [], "left_texts": [], "right_texts": [], "right_w": right_w, "stacked_part": layout["use_stacked_part"]}
+    meta = {
+        "left_sizes": [],
+        "right_sizes": [],
+        "left_texts": [],
+        "right_texts": [],
+        "right_w": right_w,
+        "stacked_part": layout["use_stacked_part"],
+    }
 
     def collect(block, side):
         for p in block["paths"]:
@@ -1637,7 +1715,7 @@ store = get_store()
 
 with st.sidebar:
     st.header("⚙️ Label settings")
-    preview_scale = st.slider("Preview scale (px/mm)", 4.0, 20.0, 8.5, 0.5)
+    st.caption("Preview auto-scales to available width")
     mode_default = st.selectbox("Default engraving mode", ALLOWED_MODES, index=1 if DEFAULT_MODE == "Anodized aluminium (negative)" else 0)
     st.divider()
     st.markdown("**Export options**")
@@ -1648,7 +1726,7 @@ with st.sidebar:
         help="Uncheck → holes omitted from SVG/DXF; shown as dashed guides in preview.",
     )
     if not show_holes:
-        st.caption("⚠️ Holes omitted from exports — guides shown in preview only")
+        st.caption("⚠️ Holes omitted from exports — guides shown in preview")
     show_guides = st.checkbox("Show layout guides (preview only)", value=False)
 
     with st.expander("🔡 Text sizes"):
@@ -1762,7 +1840,7 @@ with tab_single:
             right_margin=right_margin,
             wrap_trigger=wrap_trigger,
         )
-        render_svg_preview_card(svg_out, mode_single, preview_scale)
+        render_svg_preview_card(svg_out, mode_single)
         st.caption(f"Layout: {'stacked' if meta.get('stacked_part') else 'inline'} | Right col: {meta['right_w']:.1f} mm")
         dxf_bytes = generate_dxf(
             owner=owner,
@@ -1851,7 +1929,7 @@ with tab_batch:
                 right_margin=right_margin,
                 wrap_trigger=wrap_trigger,
             )
-            render_svg_preview_card(svg_prev, sel_mode, preview_scale)
+            render_svg_preview_card(svg_prev, sel_mode)
 
             st.divider()
             include_svg_b = st.checkbox("Include SVG", value=True, key="batch_svg")
@@ -1979,7 +2057,11 @@ with tab_custom:
             st.caption(f"{len(inv_df)} matching rows")
 
         if not inv_df.empty:
-            browse_labels = [f"P{int(r['priority'])} | {r['tool_number']} | {str(r.get('property_of','')).strip()} [{r.get('source_file','?')}]"for _, r in inv_df.iterrows()]
+            browse_labels = [
+                f"P{int(r['priority'])} | XLS row {int(r['excel_row']) if pd.notna(r.get('excel_row')) else '-'} | "
+                f"{r['tool_number']} | {str(r.get('property_of', '')).strip()} [{r.get('source_file', '?')}]"
+                for _, r in inv_df.iterrows()
+            ]
             browse_choice = st.selectbox("Select tool to preview", browse_labels, key="stored_browse")
             browse_idx = browse_labels.index(browse_choice)
             browse_row = inv_df.iloc[browse_idx]
@@ -2011,7 +2093,7 @@ with tab_custom:
                 right_margin=right_margin,
                 wrap_trigger=wrap_trigger,
             )
-            render_svg_preview_card(browse_svg, mode_default, preview_scale)
+            render_svg_preview_card(browse_svg, mode_default)
 
             browse_dxf = generate_dxf(
                 owner=str(browse_row.get("property_of", "")),
@@ -2055,7 +2137,7 @@ with tab_custom:
             )
             full_inv = full_inv[mask].reset_index(drop=True)
 
-        disp_cols = ["priority", "tool_number", "property_of", "part_description", "source_file", "updated_at"]
+        disp_cols = ["priority", "excel_row", "tool_number", "property_of", "part_description", "source_file", "updated_at"]
         disp_cols = [c for c in disp_cols if c in full_inv.columns]
 
         edited_df = selection_editor(full_inv, key="stored_sel_editor", display_columns=disp_cols, checkbox_label="Export")
@@ -2156,7 +2238,7 @@ with tab_store:
     if all_df.empty:
         st.info("No tools stored yet.")
     else:
-        view_cols = ["priority", "tool_number", "property_of", "part_description", "source_file", "updated_at"]
+        view_cols = ["priority", "excel_row", "tool_number", "property_of", "part_description", "source_file", "updated_at"]
         view_cols = [c for c in view_cols if c in all_df.columns]
         st.dataframe(all_df[view_cols], width="stretch", hide_index=True)
 
