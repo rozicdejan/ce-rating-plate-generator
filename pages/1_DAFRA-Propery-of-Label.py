@@ -1979,7 +1979,7 @@ with tab_custom:
             st.caption(f"{len(inv_df)} matching rows")
 
         if not inv_df.empty:
-            browse_labels = [f"P{int(r['priority'])} | {r['tool_number']} [{r.get('source_file', '?')}]" for _, r in inv_df.iterrows()]
+            browse_labels = [f"P{int(r['priority'])} | {r['tool_number']} | {str(r.get('property_of','')).strip()} [{r.get('source_file','?')}]"for _, r in inv_df.iterrows()]
             browse_choice = st.selectbox("Select tool to preview", browse_labels, key="stored_browse")
             browse_idx = browse_labels.index(browse_choice)
             browse_row = inv_df.iloc[browse_idx]
