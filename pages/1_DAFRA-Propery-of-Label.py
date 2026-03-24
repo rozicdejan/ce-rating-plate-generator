@@ -25,7 +25,6 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 import ezdxf
-from ezdxf.enums import TextEntityAlignment
 
 from matplotlib.textpath import TextPath
 from matplotlib.font_manager import FontProperties
@@ -84,7 +83,31 @@ DEFAULT_FS3 = 1.8
 
 MIN_TEXT_HEIGHT_MM   = 1.2
 RIGHT_MARGIN         = 2.2
-VECTOR_FONT_FAMILY   = "DejaVu Sans Condensed"
+
+def _pick_vector_font() -> str:
+    """
+    Pick the best available condensed/narrow font at runtime.
+    Checks the actual matplotlib font cache so we never trigger a
+    "Font family not found" warning.  Falls back safely to DejaVu Sans
+    which ships with every matplotlib installation.
+    """
+    from matplotlib.font_manager import fontManager
+    available = {f.name for f in fontManager.ttflist}
+    for candidate in [
+        "DejaVu Sans Condensed",
+        "Arial Narrow",
+        "Liberation Sans Narrow",
+        "Noto Sans Condensed",
+        "Roboto Condensed",
+        "DejaVu Sans",
+        "Liberation Sans",
+        "Arial",
+    ]:
+        if candidate in available:
+            return candidate
+    return "DejaVu Sans"   # always present in matplotlib
+
+VECTOR_FONT_FAMILY   = _pick_vector_font()
 
 PART_STACK_TRIGGER_LEN   = 52
 PART_STACK_INDENT        = 2.1
@@ -711,6 +734,110 @@ def mpl_path_to_svg_d(path_obj):
     return " ".join(out)
 
 
+# ============================================================
+# DXF vector-outline helpers  (exact same paths as SVG)
+# ============================================================
+
+def _approx_cubic_bezier(p0, p1, p2, p3, n=10):
+    """Approximate a cubic Bézier curve as n+1 (x, y) points."""
+    pts = []
+    for i in range(n + 1):
+        t  = i / n
+        mt = 1.0 - t
+        x  = mt**3*p0[0] + 3*mt**2*t*p1[0] + 3*mt*t**2*p2[0] + t**3*p3[0]
+        y  = mt**3*p0[1] + 3*mt**2*t*p1[1] + 3*mt*t**2*p2[1] + t**3*p3[1]
+        pts.append((x, y))
+    return pts
+
+
+def _approx_quad_bezier(p0, p1, p2, n=8):
+    """Approximate a quadratic Bézier curve as n+1 (x, y) points."""
+    pts = []
+    for i in range(n + 1):
+        t  = i / n
+        mt = 1.0 - t
+        x  = mt**2*p0[0] + 2*mt*t*p1[0] + t**2*p2[0]
+        y  = mt**2*p0[1] + 2*mt*t*p1[1] + t**2*p2[1]
+        pts.append((x, y))
+    return pts
+
+
+def mpl_path_to_dxf_polylines(msp, path_obj, layer, label_h=LABEL_H):
+    """
+    Convert a placed matplotlib Path (SVG mm coords, Y-down) into a set of
+    closed LWPOLYLINE entities in DXF space (Y-up).
+
+    Why LWPOLYLINE instead of HATCH
+    --------------------------------
+    HATCH fill requires precise winding-direction conventions that vary between
+    DXF readers and are extremely fragile after the Y-axis flip.  Closed
+    LWPOLYLINE entities work in every laser-cutter application (LightBurn,
+    RDWorks, AutoCAD, CorelDraw) without any fill/winding logic — the software
+    fills closed regions itself.  Each letter contour (including inner counter-
+    spaces such as the holes in 'o', 'B', '8') becomes its own closed polyline,
+    which correctly represents the geometry for engrave/cut operations.
+
+    Coordinate transform applied to every vertex
+    ----------------------------------------------
+      x_dxf = x_svg                 (no change)
+      y_dxf = label_h - y_svg       (flip: SVG origin top-left → DXF origin bottom-left)
+
+    Bézier curves are approximated as short straight segments so the result is
+    fully compatible with DXF R2010 LWPOLYLINE (no spline extension required).
+    """
+    if path_obj is None:
+        return
+
+    def flip(x, y):
+        return (float(x), label_h - float(y))
+
+    contours = []
+    current  = []
+    cur_pos  = (0.0, 0.0)   # tracked in SVG coords for Bézier interpolation
+
+    for verts, code in path_obj.iter_segments(simplify=False):
+        if code == MplPath.MOVETO:
+            if len(current) >= 2:
+                contours.append(current)
+            current = [flip(verts[0], verts[1])]
+            cur_pos = (float(verts[0]), float(verts[1]))
+
+        elif code == MplPath.LINETO:
+            current.append(flip(verts[0], verts[1]))
+            cur_pos = (float(verts[0]), float(verts[1]))
+
+        elif code == MplPath.CURVE3:
+            p1 = (float(verts[0]), float(verts[1]))
+            p2 = (float(verts[2]), float(verts[3]))
+            for pt in _approx_quad_bezier(cur_pos, p1, p2)[1:]:
+                current.append(flip(pt[0], pt[1]))
+            cur_pos = p2
+
+        elif code == MplPath.CURVE4:
+            p1 = (float(verts[0]), float(verts[1]))
+            p2 = (float(verts[2]), float(verts[3]))
+            p3 = (float(verts[4]), float(verts[5]))
+            for pt in _approx_cubic_bezier(cur_pos, p1, p2, p3)[1:]:
+                current.append(flip(pt[0], pt[1]))
+            cur_pos = p3
+
+        elif code == MplPath.CLOSEPOLY:
+            if len(current) >= 2:
+                contours.append(current)
+            current = []
+
+    if len(current) >= 2:
+        contours.append(current)
+
+    for contour in contours:
+        if len(contour) >= 2:
+            msp.add_lwpolyline(
+                contour,
+                close=True,
+                dxfattribs={"layer": layer},
+            )
+
+
 def add_rounded_rect_dxf(msp, x, y, w, h, r, layer):
     r = max(0.0, min(r, w / 2.0, h / 2.0))
     if r <= 0:
@@ -799,7 +926,7 @@ def selection_editor(df, key, display_columns, checkbox_label="Print"):
     col_order = ["print"] + [c for c in display_columns if c in work_df.columns]
     return st.data_editor(
         work_df[col_order], key=key, hide_index=True,
-        use_container_width=True, num_rows="fixed",
+        width="stretch", num_rows="fixed",
         disabled=[c for c in col_order if c != "print"],
         column_config={"print": st.column_config.CheckboxColumn(checkbox_label,
             help="Select rows for SVG + DXF export", default=False)},
@@ -1031,12 +1158,11 @@ def generate_dxf(owner, tool_number, part_desc, mode,
         if ln not in doc.layers: doc.layers.new(ln)
     msp = doc.modelspace()
 
-    if mode == "Anodized aluminium (negative)":
-        h = msp.add_hatch(dxfattribs={"layer": "FILL", "color": 7})
-        h.paths.add_polyline_path([
-            (border_offset, border_offset), (LABEL_W-border_offset, border_offset),
-            (LABEL_W-border_offset, LABEL_H-border_offset), (border_offset, LABEL_H-border_offset),
-        ], is_closed=True)
+    # DXF is always "normal" style regardless of mode.
+    # The laser machine only needs outlines to engrave — no fill rectangle,
+    # no color inversion.  SVG handles the black-background / white-text
+    # anodized rendering separately.
+    # The FILL layer still exists (empty) so CAD apps never complain.
 
     if show_border:
         add_rounded_rect_dxf(msp, border_offset, border_offset,
@@ -1049,12 +1175,9 @@ def generate_dxf(owner, tool_number, part_desc, mode,
         msp.add_circle((LABEL_W - hole_offset, hy), hr, dxfattribs={"layer": "HOLES"})
 
     def emit(block):
-        for i, txt in enumerate(block["texts"]):
-            if not txt: continue
-            bx, by, _, bh = block["line_boxes"][i]
-            uh = block["used_heights"][i]
-            t  = msp.add_text(txt, dxfattribs={"height": uh, "layer": "TEXT", "style": "Standard"})
-            t.set_placement((bx, LABEL_H - (by + bh * 0.80)), align=TextEntityAlignment.LEFT)
+        """Render each placed path in the block as closed DXF polyline contours."""
+        for placed_path in block.get("paths", []):
+            mpl_path_to_dxf_polylines(msp, placed_path, "TEXT")
 
     emit(layout["left_block_0"]);  emit(layout["right_block_0"])
     emit(layout["left_block_1"]);  emit(layout["right_block_1"])
@@ -1310,10 +1433,10 @@ with tab_single:
         c1, c2 = st.columns(2)
         with c1:
             st.download_button("⬇️ Download SVG", data=svg_out.encode("utf-8"),
-                               file_name=f"{base_name}.svg", mime="image/svg+xml", use_container_width=True)
+                               file_name=f"{base_name}.svg", mime="image/svg+xml", width="stretch")
         with c2:
             st.download_button("⬇️ Download DXF", data=dxf_bytes,
-                               file_name=f"{base_name}.dxf", mime="application/dxf", use_container_width=True)
+                               file_name=f"{base_name}.dxf", mime="application/dxf", width="stretch")
 
 
 # ------------------------------------------------------------
@@ -1366,7 +1489,7 @@ with tab_batch:
             if show_holes: st.info("⭕ Holes included in exports.")
             else:          st.warning("🚫 Holes excluded from exports.")
 
-            if st.button("🚀 Generate ZIP", type="primary", use_container_width=True, key="batch_gen"):
+            if st.button("🚀 Generate ZIP", type="primary", width="stretch", key="batch_gen"):
                 prog = st.progress(0, text="Starting…")
                 try:
                     zb, mdf = build_batch_zip(
@@ -1380,8 +1503,8 @@ with tab_batch:
                     prog.empty()
                     st.success(f"✅ {len(mdf)} labels generated.")
                     st.download_button(f"⬇️ Download ZIP ({len(mdf)} labels)", data=zb,
-                                       file_name="laser_labels_batch.zip", mime="application/zip", use_container_width=True)
-                    with st.expander("File list"): st.dataframe(mdf, use_container_width=True, hide_index=True)
+                                       file_name="laser_labels_batch.zip", mime="application/zip", width="stretch")
+                    with st.expander("File list"): st.dataframe(mdf, width="stretch", hide_index=True)
                 except Exception as e:
                     prog.empty(); st.error(f"Generation failed: {e}")
         except Exception as e:
@@ -1442,10 +1565,10 @@ with tab_custom:
                     preview_cols = ["tool_number", "property_of", "part_description"]
                     if "excel_row" in parsed_df.columns: preview_cols = ["excel_row"] + preview_cols
                     st.dataframe(parsed_df[[c for c in preview_cols if c in parsed_df.columns]],
-                                 use_container_width=True, hide_index=True)
+                                 width="stretch", hide_index=True)
 
                 btn_label = f"{'🔄 Replace' if is_update else '✅ Import'} {n_new} rows into store"
-                if st.button(btn_label, type="primary", use_container_width=True, key="confirm_import"):
+                if st.button(btn_label, type="primary", width="stretch", key="confirm_import"):
                     result = store.merge_from_dataframe(parsed_df, filename, file_hash)
                     save_upload_to_disk(file_bytes, filename)
                     st.success(
@@ -1516,10 +1639,10 @@ with tab_custom:
             b1, b2 = st.columns(2)
             with b1:
                 st.download_button("⬇️ Download SVG", data=browse_svg.encode("utf-8"),
-                                   file_name=f"{browse_base}.svg", mime="image/svg+xml", use_container_width=True)
+                                   file_name=f"{browse_base}.svg", mime="image/svg+xml", width="stretch")
             with b2:
                 st.download_button("⬇️ Download DXF", data=browse_dxf,
-                                   file_name=f"{browse_base}.dxf", mime="application/dxf", use_container_width=True)
+                                   file_name=f"{browse_base}.dxf", mime="application/dxf", width="stretch")
 
             st.divider()
 
@@ -1554,7 +1677,7 @@ with tab_custom:
             else:          st.warning("🚫 Holes excluded from exports.")
 
             if st.button(f"🚀 Generate ZIP for {len(selected_rows)} rows",
-                         type="primary", use_container_width=True, key="stored_gen"):
+                         type="primary", width="stretch", key="stored_gen"):
                 export_df = selected_rows.drop(columns=["print"]).copy()
                 export_df["mode"]        = mode_default
                 export_df["hole_dia"]    = hole_dia_default
@@ -1572,9 +1695,9 @@ with tab_custom:
                     prog.empty()
                     st.success(f"✅ {len(mdf)} labels generated.")
                     st.download_button(f"⬇️ Download ZIP ({len(mdf)} labels)", data=zb,
-                                       file_name="laser_labels_selected.zip", mime="application/zip", use_container_width=True)
+                                       file_name="laser_labels_selected.zip", mime="application/zip", width="stretch")
                     with st.expander("Exported file list"):
-                        st.dataframe(mdf, use_container_width=True, hide_index=True)
+                        st.dataframe(mdf, width="stretch", hide_index=True)
                 except Exception as e:
                     prog.empty(); st.error(f"Generation failed: {e}")
 
@@ -1596,7 +1719,7 @@ with tab_store:
     if files_df.empty:
         st.info("No files imported yet.")
     else:
-        st.dataframe(files_df, use_container_width=True, hide_index=True)
+        st.dataframe(files_df, width="stretch", hide_index=True)
 
         st.markdown("#### Delete a file and its tools")
         st.caption("This removes all tools that came from the selected file.")
@@ -1621,7 +1744,7 @@ with tab_store:
     else:
         view_cols = ["priority", "tool_number", "property_of", "part_description", "source_file", "updated_at"]
         view_cols = [c for c in view_cols if c in all_df.columns]
-        st.dataframe(all_df[view_cols], use_container_width=True, hide_index=True)
+        st.dataframe(all_df[view_cols], width="stretch", hide_index=True)
 
         st.markdown("#### Delete a single tool")
         tool_options = all_df["tool_number"].tolist()
@@ -1655,7 +1778,7 @@ with tab_store:
             with c2:
                 st.download_button("⬇️ Download", data=fp.read_bytes(),
                                    file_name=fp.name, key=f"dl_{fp.name}",
-                                   use_container_width=True)
+                                   width="stretch")
             with c3:
                 if st.button("🗑️", key=f"rm_{fp.name}", help=f"Delete {fp.name} from disk"):
                     fp.unlink()
